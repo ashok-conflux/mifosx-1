@@ -27,6 +27,8 @@ public class SavingsDueData {
     private final CurrencyData currency;
     @SuppressWarnings("unused")
     private BigDecimal dueAmount = BigDecimal.ZERO;
+    @SuppressWarnings("unused")
+    private BigDecimal withdrawalAmount = BigDecimal.ZERO;
 
     public static SavingsDueData instance(final Long savingsId, final String accountId, final Integer accountStatusId,
             final String productName, final Long productId, final CurrencyData currency, final BigDecimal dueAmount) {

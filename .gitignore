@@ -16,6 +16,7 @@ repos
 *.ipr
 *.iws
 rebel.xml
+rebel-remote.xml
 *.sublime-workspace
 *.DS_Store
 *.ini

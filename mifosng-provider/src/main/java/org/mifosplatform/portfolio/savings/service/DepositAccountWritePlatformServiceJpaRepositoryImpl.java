@@ -1189,5 +1189,16 @@ public class DepositAccountWritePlatformServiceJpaRepositoryImpl implements Depo
                 accountTransactionDTO.getTransactionDate(), accountTransactionDTO.getTransactionAmount(),
                 accountTransactionDTO.getPaymentDetail(), isRegularTransaction);
     }
+    
+    @Transactional
+    @Override
+    public SavingsAccountTransaction withdraw(final SavingsAccountTransactionDTO accountTransactionDTO) {
+        boolean isRegularTransaction = true;
+        final SavingsAccount account = this.depositAccountAssembler.assembleFrom(
+                accountTransactionDTO.getSavingsAccountId(), DepositAccountType.RECURRING_DEPOSIT);
+        return this.depositAccountDomainService.handleWithdrawal(account, accountTransactionDTO.getFormatter(),
+                accountTransactionDTO.getTransactionDate(), accountTransactionDTO.getTransactionAmount(),
+                accountTransactionDTO.getPaymentDetail(), true, isRegularTransaction);
+    }
 
 }

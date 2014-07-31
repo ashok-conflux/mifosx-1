@@ -11,6 +11,7 @@ import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstan
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.bulkDisbursementTransactionsParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.bulkRepaymentTransactionsParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.bulkSavingsDueTransactionsParamName;
+import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.bulkSavingsWithdrawalTransactionsParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.calendarIdParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.clientIdParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.clientsAttendanceParamName;
@@ -84,6 +85,8 @@ public class CollectionSheetTransactionDataValidator {
         validateRepaymentTransactions(element, baseDataValidator);
         
         validateSavingsDueTransactions(element, baseDataValidator);
+        
+        validateSavingsWithdrawalTransactions(element, baseDataValidator);
 
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
@@ -169,6 +172,29 @@ public class CollectionSheetTransactionDataValidator {
                     baseDataValidator.reset().parameter("bulktransaction" + "[" + i + "].savings.id").value(savingsId).notNull()
                             .integerGreaterThanZero();
                     baseDataValidator.reset().parameter("bulktransaction" + "[" + i + "].due.amount").value(dueAmount)
+                            .notNull().zeroOrPositiveAmount();
+                }
+            }
+        }
+    }
+    
+    private void validateSavingsWithdrawalTransactions(final JsonElement element, final DataValidatorBuilder baseDataValidator) {
+        final JsonObject topLevelJsonElement = element.getAsJsonObject();
+        final Locale locale = this.fromApiJsonHelper.extractLocaleParameter(topLevelJsonElement);
+        if (element.isJsonObject()) {
+            if (topLevelJsonElement.has(bulkSavingsWithdrawalTransactionsParamName)
+                    && topLevelJsonElement.get(bulkSavingsWithdrawalTransactionsParamName).isJsonArray()) {
+                final JsonArray array = topLevelJsonElement.get(bulkSavingsWithdrawalTransactionsParamName).getAsJsonArray();
+
+                for (int i = 0; i < array.size(); i++) {
+                    final JsonObject savingsTransactionElement = array.get(i).getAsJsonObject();
+                    final Long savingsId = this.fromApiJsonHelper.extractLongNamed(savingsIdParamName, savingsTransactionElement);
+                    final BigDecimal withdrawalAmount = this.fromApiJsonHelper.extractBigDecimalNamed(transactionAmountParamName,
+                            savingsTransactionElement, locale);
+
+                    baseDataValidator.reset().parameter("bulktransaction" + "[" + i + "].savings.id").value(savingsId).notNull()
+                            .integerGreaterThanZero();
+                    baseDataValidator.reset().parameter("bulktransaction" + "[" + i + "].withdrawal.amount").value(withdrawalAmount)
                             .notNull().zeroOrPositiveAmount();
                 }
             }

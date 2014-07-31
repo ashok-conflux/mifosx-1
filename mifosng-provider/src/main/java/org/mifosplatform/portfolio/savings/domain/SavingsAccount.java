@@ -39,11 +39,13 @@ import javax.persistence.DiscriminatorType;
 import javax.persistence.DiscriminatorValue;
 import javax.persistence.Embedded;
 import javax.persistence.Entity;
+import javax.persistence.FetchType;
 import javax.persistence.Inheritance;
 import javax.persistence.InheritanceType;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
 import javax.persistence.OneToMany;
+import javax.persistence.OneToOne;
 import javax.persistence.OrderBy;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
@@ -251,6 +253,9 @@ public class SavingsAccount extends AbstractPersistable<Long> {
     @Temporal(TemporalType.DATE)
     @Column(name = "start_interest_calculation_date")
     protected Date startInterestCalculationDate;
+    
+    @OneToOne(mappedBy = "account", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    protected DepositAccountRecurringDetail depositAccountRecurringDetail;
 
     @Embedded
     protected SavingsAccountSummary summary;
@@ -462,16 +467,16 @@ public class SavingsAccount extends AbstractPersistable<Long> {
 
     protected SavingsAccountTransaction findInterestPostingTransactionFor(final LocalDate postingDate) {
 
-        SavingsAccountTransaction postingTransation = null;
+        SavingsAccountTransaction postingTransaction = null;
 
         for (final SavingsAccountTransaction transaction : this.transactions) {
             if (transaction.isInterestPostingAndNotReversed() && transaction.occursOn(postingDate)) {
-                postingTransation = transaction;
+                postingTransaction = transaction;
                 break;
             }
         }
 
-        return postingTransation;
+        return postingTransaction;
     }
     
     protected SavingsAccountTransaction findLastTransactionFor(final LocalDate date) {
@@ -2283,11 +2288,9 @@ public class SavingsAccount extends AbstractPersistable<Long> {
     	return DepositAccountType.SAVINGS_DEPOSIT.getValue().equals(this.depositType);
     }
 
-    /*
-    public boolean isMandatorySavingsAccount() {
-    	associate m_deposit_account_recurring_detail table and fetch is_mandatory column from it to derive isMandatorySavingsAccount  
+    public boolean isMandatoryDeposit() {
+    	  return this.depositAccountRecurringDetail.isMandatoryDeposit();
     }
-    */
     
     public boolean isRDAccount() {
     	return DepositAccountType.RECURRING_DEPOSIT.getValue().equals(this.depositType);    

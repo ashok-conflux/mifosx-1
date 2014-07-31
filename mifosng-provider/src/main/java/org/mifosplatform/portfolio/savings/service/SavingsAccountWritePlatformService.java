@@ -68,4 +68,7 @@ public interface SavingsAccountWritePlatformService {
 	void deposit(SavingsAccountTransactionDTO savingsAccountTransactionDTO,
 			DateTimeFormatter fmt);
 	
+	void withdraw(SavingsAccountTransactionDTO savingsAccountTransactionDTO,
+			DateTimeFormatter fmt);
+	
 }

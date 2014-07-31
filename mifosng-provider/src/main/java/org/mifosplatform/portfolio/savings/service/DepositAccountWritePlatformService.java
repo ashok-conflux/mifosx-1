@@ -72,4 +72,6 @@ public interface DepositAccountWritePlatformService {
     void transferInterestToSavings() throws JobExecutionException;
     
     SavingsAccountTransaction mandatorySavingsAccountDeposit(final SavingsAccountTransactionDTO accountTransactionDTO);
+    
+    SavingsAccountTransaction withdraw(final SavingsAccountTransactionDTO accountTransactionDTO);
 }

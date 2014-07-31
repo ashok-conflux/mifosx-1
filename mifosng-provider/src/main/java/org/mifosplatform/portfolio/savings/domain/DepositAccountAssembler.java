@@ -5,7 +5,6 @@
  */
 package org.mifosplatform.portfolio.savings.domain;
 
-import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.bulkSavingsDueTransactionsParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.savingsIdParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.transactionAmountParamName;
 import static org.mifosplatform.portfolio.collectionsheet.CollectionSheetConstants.transactionDateParamName;
@@ -389,7 +388,8 @@ public class DepositAccountAssembler {
         return depositAccountRecurringDetail;
     }
 
-    public Collection<SavingsAccountTransactionDTO> assembleBulkMandatorySavingsAccountTransactionDTOs(final JsonCommand command) {
+    public Collection<SavingsAccountTransactionDTO> assembleBulkMandatorySavingsAccountTransactionDTOs(final JsonCommand command,
+    		String paramName) {
         final String json = command.json();
         if (StringUtils.isBlank(json)) { throw new InvalidJsonException(); }
         final JsonElement element = this.fromApiJsonHelper.parse(json);
@@ -402,9 +402,9 @@ public class DepositAccountAssembler {
         final DateTimeFormatter formatter = DateTimeFormat.forPattern(dateFormat).withLocale(locale);
 
         if (element.isJsonObject()) {
-            if (topLevelJsonElement.has(bulkSavingsDueTransactionsParamName)
-                    && topLevelJsonElement.get(bulkSavingsDueTransactionsParamName).isJsonArray()) {
-                final JsonArray array = topLevelJsonElement.get(bulkSavingsDueTransactionsParamName).getAsJsonArray();
+            if (topLevelJsonElement.has(paramName)
+                    && topLevelJsonElement.get(paramName).isJsonArray()) {
+                final JsonArray array = topLevelJsonElement.get(paramName).getAsJsonArray();
 
                 for (int i = 0; i < array.size(); i++) {
                     final JsonObject savingsTransactionElement = array.get(i).getAsJsonObject();
