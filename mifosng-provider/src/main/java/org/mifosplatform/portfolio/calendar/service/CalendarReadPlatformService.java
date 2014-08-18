@@ -11,7 +11,6 @@ import java.util.List;
 import org.joda.time.LocalDate;
 import org.mifosplatform.organisation.holiday.domain.Holiday;
 import org.mifosplatform.portfolio.calendar.data.CalendarData;
-import org.mifosplatform.portfolio.calendar.data.FutureCalendarData;
 import org.mifosplatform.portfolio.meeting.data.MeetingData;
 
 public interface CalendarReadPlatformService {
@@ -29,8 +28,9 @@ public interface CalendarReadPlatformService {
 
     Collection<LocalDate> generateRecurringDates(final CalendarData calendarData, final boolean withHistory, final LocalDate tillDate);
 
-    Collection<LocalDate> generateRemainingRecurringDates(final FutureCalendarData futureCalendarData,
-    		final int maxAllowedPersistedMeetingDates, final boolean isHolidayEnabled, final List<Holiday> holidays);
+    Collection<LocalDate> generateRemainingRecurringDates(final LocalDate startDate, 
+    		final LocalDate fromDate, final String recurrenceRule, final int noOfDatesToProduce,
+    		final boolean isHolidayEnabled, final List<Holiday> holidays);
     
     Collection<LocalDate> generateNextTenRecurringDates(final CalendarData calendarData);
 

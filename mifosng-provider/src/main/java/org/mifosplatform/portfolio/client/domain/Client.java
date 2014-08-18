@@ -554,6 +554,16 @@ public final class Client extends AbstractPersistable<Long> {
                 dataValidationErrors.add(error);
             }
         }
+        
+        if (getActivationLocalDate() == null && SavingsProduct() != null) {
+        	final String defaultUserMessage = "Activation date must be provided if SavingsProduct is to be attached"
+        			+ "for creation of charges.";
+            final ApiParameterError error = ApiParameterError.parameterError("error.msg.clients.activationDate.must.be.provided."
+            		+ "if.savings.product.is.attached.",
+                    defaultUserMessage, ClientApiConstants.savingsProductIdParamName, savingsProductId());
+
+            dataValidationErrors.add(error);
+        }
     }
 
     private void deriveDisplayName() {

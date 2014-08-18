@@ -34,6 +34,9 @@ import org.mifosplatform.infrastructure.jobs.annotation.CronTarget;
 import org.mifosplatform.infrastructure.jobs.service.JobName;
 import org.mifosplatform.organisation.holiday.domain.Holiday;
 import org.mifosplatform.organisation.holiday.domain.HolidayRepositoryWrapper;
+import org.mifosplatform.organisation.office.domain.Office;
+import org.mifosplatform.organisation.workingdays.domain.WorkingDays;
+import org.mifosplatform.organisation.workingdays.domain.WorkingDaysRepositoryWrapper;
 import org.mifosplatform.portfolio.calendar.CalendarConstants.CALENDAR_SUPPORTED_PARAMETERS;
 import org.mifosplatform.portfolio.calendar.data.FutureCalendarData;
 import org.mifosplatform.portfolio.calendar.domain.Calendar;
@@ -55,6 +58,8 @@ import org.mifosplatform.portfolio.group.domain.GroupRepositoryWrapper;
 import org.mifosplatform.portfolio.loanaccount.domain.Loan;
 import org.mifosplatform.portfolio.loanaccount.domain.LoanRepository;
 import org.mifosplatform.portfolio.loanaccount.service.LoanWritePlatformService;
+import org.mifosplatform.portfolio.savings.domain.SavingsAccountCharge;
+import org.mifosplatform.portfolio.savings.domain.SavingsAccountChargeRepository;
 import org.mifosplatform.portfolio.savings.service.DepositApplicationProcessWritePlatformService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -76,11 +81,13 @@ public class CalendarWritePlatformServiceJpaRepositoryImpl implements CalendarWr
     private final DepositApplicationProcessWritePlatformService depositApplicationProcessWritePlatformService;
     private final ConfigurationDomainService configurationDomainService;
     private final HolidayRepositoryWrapper holidayRepository;
+    private final WorkingDaysRepositoryWrapper workingDaysRepository;
     private final GroupRepositoryWrapper groupRepository;
     private final LoanRepository loanRepository;
     private final ClientRepositoryWrapper clientRepository;
+    private final SavingsAccountChargeRepository savingsAccountChargeRepository;
     private final JdbcTemplate jdbcTemplate;
-    private final PaginationHelper<FutureCalendarData> paginationHelper = new PaginationHelper<>();
+    private final PaginationHelper<FutureCalendarData> paginationHelper;
 
     @Autowired
     public CalendarWritePlatformServiceJpaRepositoryImpl(final CalendarRepository calendarRepository,
@@ -92,7 +99,9 @@ public class CalendarWritePlatformServiceJpaRepositoryImpl implements CalendarWr
             final DepositApplicationProcessWritePlatformService depositApplicationProcessWritePlatformService,
             final HolidayRepositoryWrapper holidayRepository,
             final ConfigurationDomainService configurationDomainService,
+            final WorkingDaysRepositoryWrapper workingDaysRepository,
             final GroupRepositoryWrapper groupRepository, final LoanRepository loanRepository,
+            final SavingsAccountChargeRepository savingsAccountChargeRepository,
             final ClientRepositoryWrapper clientRepository, final RoutingDataSource dataSource) {
         this.calendarRepository = calendarRepository;
         this.calendarHistoryRepository = calendarHistoryRepository;
@@ -104,10 +113,13 @@ public class CalendarWritePlatformServiceJpaRepositoryImpl implements CalendarWr
         this.depositApplicationProcessWritePlatformService = depositApplicationProcessWritePlatformService;
         this.holidayRepository = holidayRepository;
         this.configurationDomainService = configurationDomainService;
+        this.workingDaysRepository = workingDaysRepository;
         this.groupRepository = groupRepository;
         this.loanRepository = loanRepository;
         this.clientRepository = clientRepository;
+        this.savingsAccountChargeRepository = savingsAccountChargeRepository;
         this.jdbcTemplate = new JdbcTemplate(dataSource);
+        this.paginationHelper = new PaginationHelper<>();
     }
 
     @Override
@@ -211,7 +223,10 @@ public class CalendarWritePlatformServiceJpaRepositoryImpl implements CalendarWr
             
             this.calendarRepository.saveAndFlush(calendarForUpdate);
             
-            deleteCalendarDatesOnCenterCalendarUpdate(command);
+            deleteCalendarDates(command);
+            
+            if(calendarForUpdate.isRepeating())
+            	updateChargeInstallmentDates(command);
             
             if (this.configurationDomainService.isRescheduleFutureRepaymentsEnabled() && calendarForUpdate.isRepeating()) {
                 // fetch all loan calendar instances associated with modifying
@@ -361,8 +376,10 @@ public class CalendarWritePlatformServiceJpaRepositoryImpl implements CalendarWr
     		int numberOfFutureCalendars = futureCalendar.getNumberOfFutureCalendars();
     		
     		if(numberOfFutureCalendars < 10) {
+    			final int noOfDatesToProduce = maxAllowedPersistedCalendarDates - futureCalendar.getNumberOfFutureCalendars();
     			final Set<LocalDate> remainingRecurringDates = new HashSet<>(this.calendarReadPlatformService
-    					.generateRemainingRecurringDates(futureCalendar, maxAllowedPersistedCalendarDates,
+    					.generateRemainingRecurringDates(futureCalendar.getStartDate(), futureCalendar.getFromDate(),
+    							futureCalendar.getRecurrence(), noOfDatesToProduce,
     							isHolidayEnabled, holidays));
     			
     			CalendarDate calendarDate = null;
@@ -377,20 +394,16 @@ public class CalendarWritePlatformServiceJpaRepositoryImpl implements CalendarWr
     	}
     }
     
-    private void deleteCalendarDatesOnCenterCalendarUpdate(final JsonCommand command) {
-    	
-    	Long entityId = null;
-    	CalendarEntityType entityType = CalendarEntityType.INVALID;
+    //Job repopulates dates at end of day.
+    private void deleteCalendarDates(final JsonCommand command) {
     	
     	if (command.getGroupId() != null) {
-    		entityId = command.getGroupId();
-            final Group group = this.groupRepository.findOneWithNotFoundDetection(entityId);
-            if (group.isCenter()) {
-                entityType = CalendarEntityType.CENTERS;
-            } else if (group.isChildGroup()) {
-                entityType = CalendarEntityType.CENTERS;
-                entityId = group.getParent().getId();
-            }
+            final Group group = this.groupRepository.findOneWithNotFoundDetection(command.getGroupId());
+            
+            EntityDetails entityDetails = getCalendarEntityTypeAndEntityId(group);
+            Long entityId = entityDetails.getEntityId();
+            CalendarEntityType entityType = entityDetails.getEntityType();
+            
 	        if(entityType.isCenter()) {
 	            final CalendarInstance calendarInstance = this.calendarInstanceRepository.findByCalendarIdAndEntityIdAndEntityTypeId(
 	                    command.entityId(), entityId, entityType.getValue());
@@ -398,4 +411,74 @@ public class CalendarWritePlatformServiceJpaRepositoryImpl implements CalendarWr
 	        }
         }
     }
+    
+	private void updateChargeInstallmentDates(final JsonCommand command) {
+	    
+	    final List<Long> savingsAccountChargeIds = this.calendarInstanceRepository.
+	    		getSavingsAccountChargeIds(command.entityId());
+	    if(savingsAccountChargeIds != null) {
+	    	
+	    	final Group group = this.groupRepository.findOneWithNotFoundDetection(command.getGroupId());
+	    	final Office office = group.getOffice();
+	    	
+	    	EntityDetails entityDetails = getCalendarEntityTypeAndEntityId(group);
+            Long entityId = entityDetails.getEntityId();
+            CalendarEntityType entityType = entityDetails.getEntityType();
+            
+            final CalendarInstance calendarInstance = this.calendarInstanceRepository.findByCalendarIdAndEntityIdAndEntityTypeId(
+                    command.entityId(), entityId, entityType.getValue());
+            final Calendar calendar = calendarInstance.getCalendar();
+	    	
+	    	final boolean isHolidayEnabled = this.configurationDomainService.isRescheduleInstallmentsOnHolidaysEnabled();
+			List<Holiday> holidays = this.holidayRepository.findByOfficeIdAndGreaterThanDate(office.getId(),
+					office.getOpeningLocalDate().toDate());
+			final WorkingDays workingDays = this.workingDaysRepository.findOne();
+			
+		    final List<SavingsAccountCharge> savingsAccountCharges = this.savingsAccountChargeRepository
+		    		.findAll(savingsAccountChargeIds);
+		    for(SavingsAccountCharge savingsAccountCharge : savingsAccountCharges) {
+		    	savingsAccountCharge.updateSchedule(calendar, isHolidayEnabled, holidays, workingDays);
+		    }
+		    
+		    this.savingsAccountChargeRepository.save(savingsAccountCharges);
+	    }
+	}
+	
+	private EntityDetails getCalendarEntityTypeAndEntityId(final Group group) {
+		
+		Long entityId = group.getId();
+        CalendarEntityType entityType = CalendarEntityType.GROUPS;
+        
+        /*
+         * If group is within a center then center entityType should be
+         * passed for retrieving CalendarInstance.
+         */
+        if (group.isCenter()) {
+            entityType = CalendarEntityType.CENTERS;
+        } else if (group.isChildGroup()) {
+            entityType = CalendarEntityType.CENTERS;
+            entityId = group.getParent().getId();
+        }
+		
+		return new EntityDetails(entityId, entityType);
+	}
+	
+	private static final class EntityDetails {
+		
+		final Long entityId;
+		final CalendarEntityType entityType;
+		
+		public EntityDetails(Long entityId, CalendarEntityType entityType) {
+			this.entityId = entityId;
+			this.entityType = entityType;
+		}
+		
+		public Long getEntityId() {
+			return this.entityId;
+		}
+		
+		public CalendarEntityType getEntityType() {
+			return this.entityType;
+		}
+	}
 }

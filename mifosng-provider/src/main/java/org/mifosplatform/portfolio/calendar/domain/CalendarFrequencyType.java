@@ -8,6 +8,7 @@ package org.mifosplatform.portfolio.calendar.domain;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.mifosplatform.portfolio.charge.domain.ChargeTimeType;
 import org.mifosplatform.portfolio.common.domain.PeriodFrequencyType;
 import org.springframework.util.StringUtils;
 
@@ -81,6 +82,14 @@ public enum CalendarFrequencyType {
     public boolean isWeekly() {
         return this.value.equals(CalendarFrequencyType.WEEKLY.value);
     }
+    
+    public boolean isMonthly() {
+        return this.value.equals(CalendarFrequencyType.MONTHLY.value);
+    }
+    
+    public boolean isAnnual() {
+        return this.value.equals(CalendarFrequencyType.YEARLY.value);
+    }
 
     public boolean isInvalid() {
         return this.value.equals(CalendarFrequencyType.INVALID.value);
@@ -127,6 +136,46 @@ public enum CalendarFrequencyType {
                 return PeriodFrequencyType.YEARS;
             default:
                 return PeriodFrequencyType.INVALID;
+        }
+    }
+    
+    /**
+     * To convert from charge time type to calendar frequency type. This
+     * method requires code refactoring.
+     * 
+     * @param chargeTimeType
+     * @return
+     */
+    public static CalendarFrequencyType from(final ChargeTimeType chargeTimeType) {
+        switch (chargeTimeType) {
+            case WEEKLY_FEE:
+                return CalendarFrequencyType.WEEKLY;
+            case MONTHLY_FEE:
+                return CalendarFrequencyType.MONTHLY;
+            case ANNUAL_FEE:
+                return CalendarFrequencyType.YEARLY;
+            default:
+                return CalendarFrequencyType.INVALID;
+        }
+    }
+
+    /**
+     * To convert from charge time type to calendar frequency type. This
+     * method requires code refactoring.
+     * 
+     * @param frequencyType
+     * @return
+     */
+    public static ChargeTimeType toChargeTimeType(final CalendarFrequencyType frequencyType) {
+        switch (frequencyType) {
+            case WEEKLY:
+                return ChargeTimeType.WEEKLY_FEE;
+            case MONTHLY:
+                return ChargeTimeType.MONTHLY_FEE;
+            case YEARLY:
+                return ChargeTimeType.ANNUAL_FEE;
+            default:
+                return ChargeTimeType.INVALID;
         }
     }
 }

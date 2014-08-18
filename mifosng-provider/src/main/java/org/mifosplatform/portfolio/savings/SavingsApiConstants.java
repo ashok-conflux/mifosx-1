@@ -129,6 +129,7 @@ public class SavingsApiConstants {
     public static final String amountPaidParamName = "amountPaid";
     public static final String chargeOptionsParamName = "chargeOptions";
     public static final String chargePaymentModeParamName = "chargePaymentMode";
+    public static final String calendarInheritedParamName = "isCalendarInherited";
 
     public static final String noteParamName = "note";
 
@@ -215,11 +216,11 @@ public class SavingsApiConstants {
             savingsAccountChargeIdParamName, chargeNameParamName, penaltyParamName, chargeTimeTypeParamName, dueAsOfDateParamName,
             chargeCalculationTypeParamName, percentageParamName, amountPercentageAppliedToParamName, currencyParamName,
             amountWaivedParamName, amountWrittenOffParamName, amountOutstandingParamName, amountOrPercentageParamName, amountParamName,
-            amountPaidParamName, chargeOptionsParamName));
+            amountPaidParamName, chargeOptionsParamName, calendarInheritedParamName));
 
     public static final Set<String> SAVINGS_ACCOUNT_CHARGES_ADD_REQUEST_DATA_PARAMETERS = new HashSet<>(Arrays.asList(chargeIdParamName,
             amountParamName, dueAsOfDateParamName, dateFormatParamName, localeParamName, feeOnMonthDayParamName, monthDayFormatParamName,
-            feeIntervalParamName));
+            feeIntervalParamName, calendarInheritedParamName));
 
     public static final Set<String> SAVINGS_ACCOUNT_CHARGES_PAY_CHARGE_REQUEST_DATA_PARAMETERS = new HashSet<>(Arrays.asList(
             amountParamName, dueAsOfDateParamName, dateFormatParamName, localeParamName));

@@ -15,14 +15,19 @@ import static org.mifosplatform.portfolio.savings.SavingsApiConstants.localePara
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
+import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
+import javax.persistence.FetchType;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
+import javax.persistence.OneToMany;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
@@ -31,9 +36,20 @@ import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.joda.time.LocalDate;
 import org.joda.time.MonthDay;
+import org.joda.time.Months;
+import org.joda.time.Weeks;
+import org.joda.time.YearMonth;
+import org.joda.time.Years;
 import org.mifosplatform.infrastructure.core.api.JsonCommand;
+import org.mifosplatform.infrastructure.core.service.DateUtils;
+import org.mifosplatform.organisation.holiday.domain.Holiday;
+import org.mifosplatform.organisation.holiday.service.HolidayUtil;
 import org.mifosplatform.organisation.monetary.domain.MonetaryCurrency;
 import org.mifosplatform.organisation.monetary.domain.Money;
+import org.mifosplatform.organisation.workingdays.domain.WorkingDays;
+import org.mifosplatform.portfolio.calendar.domain.Calendar;
+import org.mifosplatform.portfolio.calendar.domain.CalendarFrequencyType;
+import org.mifosplatform.portfolio.calendar.service.CalendarUtils;
 import org.mifosplatform.portfolio.charge.domain.Charge;
 import org.mifosplatform.portfolio.charge.domain.ChargeCalculationType;
 import org.mifosplatform.portfolio.charge.domain.ChargeTimeType;
@@ -51,6 +67,9 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     @ManyToOne(optional = false)
     @JoinColumn(name = "charge_id", referencedColumnName = "id", nullable = false)
     private Charge charge;
+    
+    @OneToMany(mappedBy = "savingsAccountCharge", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments;
 
     @Column(name = "charge_time_enum", nullable = false)
     private Integer chargeTime;
@@ -108,6 +127,9 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     @Temporal(TemporalType.DATE)
     @Column(name = "inactivated_on_date")
     private Date inactivationDate;
+    
+    @Column(name = "is_calendar_inherited", nullable = false)
+    private boolean isCalendarInherited = false;
 
     public static SavingsAccountCharge createNewFromJson(final SavingsAccount savingsAccount, final Charge chargeDefinition,
             final JsonCommand command) {
@@ -119,6 +141,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         final ChargeTimeType chargeTime = null;
         final ChargeCalculationType chargeCalculation = null;
         final boolean status = true;
+        final boolean isCalendarInherited = false;
 
         // If these values is not sent as parameter, then derive from Charge
         // definition
@@ -127,14 +150,14 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         feeInterval = (feeInterval == null) ? chargeDefinition.getFeeInterval() : feeInterval;
 
         return new SavingsAccountCharge(savingsAccount, chargeDefinition, amount, chargeTime, chargeCalculation, dueDate, status,
-                feeOnMonthDay, feeInterval);
+                feeOnMonthDay, feeInterval, isCalendarInherited);
     }
 
     public static SavingsAccountCharge createNewWithoutSavingsAccount(final Charge chargeDefinition, final BigDecimal amountPayable,
             final ChargeTimeType chargeTime, final ChargeCalculationType chargeCalculation, final LocalDate dueDate, final boolean status,
-            final MonthDay feeOnMonthDay, final Integer feeInterval) {
+            final MonthDay feeOnMonthDay, final Integer feeInterval, final Boolean isCalendarInherited) {
         return new SavingsAccountCharge(null, chargeDefinition, amountPayable, chargeTime, chargeCalculation, dueDate, status,
-                feeOnMonthDay, feeInterval);
+                feeOnMonthDay, feeInterval, isCalendarInherited);
     }
 
     protected SavingsAccountCharge() {
@@ -143,12 +166,13 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
 
     private SavingsAccountCharge(final SavingsAccount savingsAccount, final Charge chargeDefinition, final BigDecimal amount,
             final ChargeTimeType chargeTime, final ChargeCalculationType chargeCalculation, final LocalDate dueDate, final boolean status,
-            MonthDay feeOnMonthDay, final Integer feeInterval) {
+            MonthDay feeOnMonthDay, final Integer feeInterval, final Boolean isCalendarInherited) {
 
         this.savingsAccount = savingsAccount;
         this.charge = chargeDefinition;
         this.penaltyCharge = chargeDefinition.isPenalty();
         this.chargeTime = (chargeTime == null) ? chargeDefinition.getChargeTime() : chargeTime.getValue();
+        
 
         if (isOnSpecifiedDueDate()) {
             if (dueDate == null) {
@@ -213,6 +237,9 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
 
         this.paid = determineIfFullyPaid();
         this.status = status;
+        
+        if(isCalendarInherited != null && isRecurringFee())
+        	this.isCalendarInherited = isCalendarInherited;
     }
 
     public void resetPropertiesForRecurringFees() {
@@ -360,7 +387,8 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         this.savingsAccount = savingsAccount;
     }
 
-    public void update(final BigDecimal amount, final LocalDate dueDate, final MonthDay feeOnMonthDay, final Integer feeInterval) {
+    public void update(final BigDecimal amount, final LocalDate dueDate, final MonthDay feeOnMonthDay, final Integer feeInterval,
+    		final Boolean isCalendarInherited) {
         final BigDecimal transactionAmount = BigDecimal.ZERO;
         if (dueDate != null) {
             this.dueDate = dueDate.toDate();
@@ -376,6 +404,10 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
 
         if (feeInterval != null) {
             this.feeInterval = feeInterval;
+        }
+        
+        if (isCalendarInherited != null) {
+            this.isCalendarInherited = isCalendarInherited;
         }
 
         if (amount != null) {
@@ -475,6 +507,11 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
                     this.amountOutstanding = null;
                 break;
             }
+            
+            final List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = 
+            		savingsAccountChargeScheduleInstallments();
+            for(SavingsAccountChargeScheduleInstallment installment : savingsAccountChargeScheduleInstallments)
+            	installment.updateAmount(newValue);
         }
 
         return actualChanges;
@@ -488,6 +525,29 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         LocalDate dueDate = null;
         if (this.dueDate != null) {
             dueDate = new LocalDate(this.dueDate);
+        }
+        
+        return dueDate;
+    }
+    
+    public LocalDate getApplicableDueDate() {
+    	LocalDate dueDate = getDueLocalDate();
+    	LocalDate today = DateUtils.getLocalDateOfTenant();
+        YearMonth currentYearMonth = new YearMonth(today);
+        
+       //If due date has already passed in current year, get next due date.
+        if (isAnnualFee()) {
+        	dueDate = new LocalDate().withMonthOfYear(this.feeOnMonth);
+        	dueDate = dueDate.withMonthOfYear(this.feeOnMonth);
+        	if(dueDate.isBefore(today))
+        		dueDate = calculateNextDueDate(today);
+        } else if (isMonthlyFee()) {
+        	
+        	//If due date is of a previous month, get a due date with month >= this month.
+        	dueDate = new LocalDate().withMonthOfYear(this.feeOnMonth);
+        	dueDate = dueDate.withDayOfMonth(this.feeOnDay);
+        	while(currentYearMonth.getMonthOfYear() > dueDate.getMonthOfYear())
+    			dueDate = calculateNextDueDate(today);
         }
         return dueDate;
     }
@@ -584,6 +644,13 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     public Money getAmountOutstanding(final MonetaryCurrency currency) {
         return Money.of(currency, this.amountOutstanding);
     }
+    
+    public Integer getFeeInterval() {
+    	if(isAnnualFee())
+    		return 1;
+    	else
+    		return this.feeInterval;
+    }
 
     /**
      * @param incrementBy
@@ -662,10 +729,18 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     public boolean isWeeklyFee() {
         return ChargeTimeType.fromInt(this.chargeTime).isWeeklyFee();
     }
+    
+    public ChargeTimeType getChargeTimeType() {
+    	return ChargeTimeType.fromInt(this.chargeTime);
+    }
 
     public boolean hasCurrencyCodeOf(final String matchingCurrencyCode) {
         if (this.currencyCode() == null || matchingCurrencyCode == null) { return false; }
         return this.currencyCode().equalsIgnoreCase(matchingCurrencyCode);
+    }
+    
+    public boolean isCalendarInherited() {
+        return this.isCalendarInherited;
     }
 
     @Override
@@ -823,4 +898,106 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     public boolean isNotActive() {
         return !isActive();
     }
+    
+    public void generateSchedule(final Calendar calendar, final boolean isHolidayEnabled,
+    		final List<Holiday> holidays, final WorkingDays workingDays) {
+    	
+    	final CalendarFrequencyType frequency = CalendarUtils.getFrequency(calendar.getRecurrence());
+        Integer recurringEvery = CalendarUtils.getInterval(calendar.getRecurrence());
+        recurringEvery = recurringEvery == -1 ? 1 : recurringEvery;
+        
+        final List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = 
+        		savingsAccountChargeScheduleInstallments();
+        savingsAccountChargeScheduleInstallments.clear();
+        LocalDate installmentDate = null;
+        if (isCalendarInherited()) {
+            installmentDate = CalendarUtils.getNextScheduleDate(calendar, getApplicableDueDate(), workingDays);
+        } else {
+            installmentDate = getApplicableDueDate();
+        }
+
+        final LocalDate installmentsTillDate = calculateInstallmentsTillDate(installmentDate, frequency, recurringEvery);
+        int installmentNumber = 1;
+        final BigDecimal dueAmount = this.amount;
+        while (installmentsTillDate.isAfter(installmentDate)) {
+        	SavingsAccountChargeScheduleInstallment installment = null;
+        	if (isHolidayEnabled) {
+        		LocalDate holidayModifiedInstallmentDate = HolidayUtil.getRepaymentRescheduleDateToIfHoliday(installmentDate, holidays);
+        		installment = SavingsAccountChargeScheduleInstallment.installment(this,
+                        installmentNumber, holidayModifiedInstallmentDate.toDate(), dueAmount);
+            } else {
+            installment = SavingsAccountChargeScheduleInstallment.installment(this,
+                    installmentNumber, installmentDate.toDate(), dueAmount);
+            }
+        	savingsAccountChargeScheduleInstallments.add(installment);
+            installmentDate = CalendarUtils.getNextScheduleDate(calendar, installmentDate, workingDays);
+            installmentNumber += 1;
+        }
+    }
+    
+    public void updateSchedule(final Calendar calendar, final boolean isHolidayEnabled,
+    		final List<Holiday> holidays, final WorkingDays workingDays) {
+    	
+    	final List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = 
+        		savingsAccountChargeScheduleInstallments();
+    	
+    	LocalDate lastInstallmentDate = savingsAccountChargeScheduleInstallments.get(0).getDueDate();
+    	
+    	for(SavingsAccountChargeScheduleInstallment installment : savingsAccountChargeScheduleInstallments) {
+    		LocalDate dueDate = installment.getDueDate();
+    		LocalDate meetingChangeDate = calendar.getStartDateLocalDate();
+    		if(dueDate.isAfter(meetingChangeDate) || dueDate.isEqual(meetingChangeDate)) {
+    			LocalDate nextScheduleDate = CalendarUtils.getNextScheduleDate(calendar, lastInstallmentDate, workingDays);
+    			if (isHolidayEnabled) {
+            		LocalDate holidayModifiedInstallmentDate = HolidayUtil.getRepaymentRescheduleDateToIfHoliday(nextScheduleDate, holidays);
+            		installment.updateDueDate(holidayModifiedInstallmentDate);
+                } else {
+                	installment.updateDueDate(nextScheduleDate);
+                }
+    		} 
+
+			lastInstallmentDate = dueDate;
+    	}
+    	
+    }
+    
+    public List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments() {
+        if (this.savingsAccountChargeScheduleInstallments == null) {
+            this.savingsAccountChargeScheduleInstallments = new ArrayList<>();
+        }
+        return this.savingsAccountChargeScheduleInstallments;
+    }
+    
+    private LocalDate calculateInstallmentsTillDate(final LocalDate startDate, final CalendarFrequencyType frequency,
+    		Integer recurringEvery) {
+
+        LocalDate tillDate = null;
+        final LocalDate today = DateUtils.getLocalDateOfTenant();
+        Integer minNumberOfInstallments = 10;
+        boolean additionalInstallments = false;
+        if(startDate.isBefore(today))
+        	additionalInstallments = true;
+        switch (frequency) {
+            case WEEKLY:
+            	tillDate = (additionalInstallments) ? startDate.plusWeeks(minNumberOfInstallments 
+            			* recurringEvery + Weeks.weeksBetween(startDate, today).getWeeks()) :
+            				startDate.plusWeeks(minNumberOfInstallments * recurringEvery);
+            break;
+            case MONTHLY:
+            	tillDate = (additionalInstallments) ? startDate.plusMonths(minNumberOfInstallments
+            			* recurringEvery + Months.monthsBetween(startDate, today).getMonths()) :
+            				startDate.plusMonths(minNumberOfInstallments * recurringEvery);
+            break;
+            case YEARLY:
+            	tillDate = (additionalInstallments) ? startDate.plusYears(minNumberOfInstallments
+            			* recurringEvery + Years.yearsBetween(startDate, today).getYears() ) :
+            				startDate.plusYears(minNumberOfInstallments * recurringEvery);
+            break;
+			default:
+			break;
+        }
+
+        return tillDate;
+    }
+    
 }

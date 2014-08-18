@@ -182,7 +182,7 @@ public class CalendarsApiResource {
 
     }
 
-@PUT
+    @PUT
     @Path("{calendarId}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
@@ -244,7 +244,7 @@ public class CalendarsApiResource {
             case SAVINGS:
                 resourceDetails.withSavingsId(entityId);
             break;
-            case INVALID:
+            default:
             break;
         }
         return resourceDetails.build();

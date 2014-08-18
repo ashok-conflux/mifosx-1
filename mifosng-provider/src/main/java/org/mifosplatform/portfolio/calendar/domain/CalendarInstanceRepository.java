@@ -11,6 +11,7 @@ import java.util.List;
 import org.mifosplatform.portfolio.group.domain.Group;
 import org.mifosplatform.portfolio.loanaccount.domain.Loan;
 import org.mifosplatform.portfolio.savings.domain.SavingsAccount;
+import org.mifosplatform.portfolio.savings.domain.SavingsAccountCharge;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -25,7 +26,7 @@ public interface CalendarInstanceRepository extends JpaRepository<CalendarInstan
     Collection<CalendarInstance> findByEntityIdAndEntityTypeId(Long entityId, Integer entityTypeId);
 
     /**
-     * @param entityId : Id of {@link Client}, {@link Group}, {@link Loan} or {@link SavingsAccount}.
+     * @param entityId : Id of {@link Client}, {@link Group}, {@link Loan} or {@link SavingsAccount} or {@link SavingsAccountCharge}.
      * @param entityTypeId: {@link CalendarEntityType}
      * @param calendarTypeId: {@link CalendarType}
      * @return
@@ -41,4 +42,7 @@ public interface CalendarInstanceRepository extends JpaRepository<CalendarInstan
     @Query("from CalendarInstance ci where ci.entityId in (select id from Loan loan where loan.client.id = :clientId and loan.group.id = :groupId and (loan.loanStatus = 100 or loan.loanStatus = 200 or loan.loanStatus = 300)) and ci.entityTypeId = 3")
     List<CalendarInstance> findCalendarInstancesForActiveLoansByGroupIdAndClientId(@Param("groupId") Long groupId,
             @Param("clientId") Long clientId);
+    
+    @Query("select ci.entityId from CalendarInstance ci where ci.calendar.id = :calendarId and ci.entityTypeId = 6")
+    List<Long> getSavingsAccountChargeIds(@Param("calendarId") Long calendarId);
 }

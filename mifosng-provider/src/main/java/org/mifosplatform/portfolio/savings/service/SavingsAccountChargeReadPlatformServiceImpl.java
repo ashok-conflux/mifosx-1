@@ -15,6 +15,8 @@ import org.joda.time.LocalDate;
 import org.joda.time.MonthDay;
 import org.mifosplatform.infrastructure.core.data.EnumOptionData;
 import org.mifosplatform.infrastructure.core.domain.JdbcSupport;
+import org.mifosplatform.infrastructure.core.service.Page;
+import org.mifosplatform.infrastructure.core.service.PaginationHelper;
 import org.mifosplatform.infrastructure.core.service.RoutingDataSource;
 import org.mifosplatform.infrastructure.security.service.PlatformSecurityContext;
 import org.mifosplatform.organisation.monetary.data.CurrencyData;
@@ -40,6 +42,7 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
     private final PlatformSecurityContext context;
     private final ChargeDropdownReadPlatformService chargeDropdownReadPlatformService;
     private final DropdownReadPlatformService dropdownReadPlatformService;
+    private final PaginationHelper<SavingsAccountAnnualFeeData> paginationHelper;
 
     // mappers
     private final SavingsAccountChargeDueMapper chargeDueMapper;
@@ -53,6 +56,7 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
         this.jdbcTemplate = new JdbcTemplate(dataSource);
         this.chargeDueMapper = new SavingsAccountChargeDueMapper();
         this.dropdownReadPlatformService = dropdownReadPlatformService;
+        this.paginationHelper = new PaginationHelper<>();
     }
 
     private static final class SavingsAccountChargeMapper implements RowMapper<SavingsAccountChargeData> {
@@ -72,7 +76,7 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
                     + "sc.fee_on_day as feeOnDay, sc.fee_interval as feeInterval, "
                     + "sc.charge_calculation_enum as chargeCalculation, "
                     + "sc.is_active as isActive, sc.inactivated_on_date as inactivationDate, "
-                    + "c.currency_code as currencyCode, oc.name as currencyName, "
+                    + "sc.is_calendar_inherited as isCalendarInherited, c.currency_code as currencyCode, oc.name as currencyName, "
                     + "oc.decimal_places as currencyDecimalPlaces, oc.currency_multiplesof as inMultiplesOf, oc.display_symbol as currencyDisplaySymbol, "
                     + "oc.internationalized_name_code as currencyNameCode from m_charge c "
                     + "join m_organisation_currency oc on c.currency_code = oc.code "
@@ -122,12 +126,14 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
             final boolean penalty = rs.getBoolean("penalty");
             final Boolean isActive = rs.getBoolean("isActive");
             final LocalDate inactivationDate = JdbcSupport.getLocalDate(rs, "inactivationDate");
+            final Boolean isCalendarInherited = rs.getBoolean("isCalendarInherited");
 
             final Collection<ChargeData> chargeOptions = null;
 
             return SavingsAccountChargeData.instance(id, chargeId, accountId, name, currency, amount, amountPaid, amountWaived,
                     amountWrittenOff, amountOutstanding, chargeTimeType, dueAsOfDate, chargeCalculationType, percentageOf,
-                    amountPercentageAppliedTo, chargeOptions, penalty, feeOnMonthDay, feeInterval, isActive, inactivationDate);
+                    amountPercentageAppliedTo, chargeOptions, penalty, feeOnMonthDay, feeInterval, isActive, inactivationDate,
+                    isCalendarInherited);
         }
     }
 
@@ -226,13 +232,27 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
     }
 
     @Override
-    public Collection<SavingsAccountAnnualFeeData> retrieveChargesWithDue() {
-        final String sql = "select "
-                + this.chargeDueMapper.schema()
-                + " where sac.charge_due_date is not null and sac.charge_due_date <= NOW() and sac.waived = 0 and sac.is_paid_derived=0 and sac.is_active=1 and sa.status_enum = "
-                + SavingsAccountStatusType.ACTIVE.getValue() + " order by sac.charge_due_date ";
+    public Page<SavingsAccountAnnualFeeData> retrieveChargesWithDue(int offsetCounter) {
+    	
+    	final int maxPageSize = 500;
+    	final StringBuilder sqlBuilder = new StringBuilder(200);
+    	
+    	sqlBuilder.append("select SQL_CALC_FOUND_ROWS ");
+    	sqlBuilder.append(this.chargeDueMapper.schema());
+        sqlBuilder.append(" where sac.charge_due_date is not null and sac.charge_due_date <= NOW() and sac.waived = 0 and sac.is_paid_derived=0 and sac.is_active=1 and sa.status_enum = ");
+        sqlBuilder.append(SavingsAccountStatusType.ACTIVE.getValue());
+        sqlBuilder.append(" order by sac.charge_due_date ");
+        sqlBuilder.append(" limit " + maxPageSize);
+        sqlBuilder.append(" offset " + offsetCounter);
+        
+        final String sqlCountRows = "SELECT FOUND_ROWS()";
+        
+        Page<SavingsAccountAnnualFeeData> chargesDueData;
+        
+        	chargesDueData = this.paginationHelper.fetchPage(this.jdbcTemplate,
+        			sqlCountRows, sqlBuilder.toString(), new Object[] {}, this.chargeDueMapper);
 
-        return this.jdbcTemplate.query(sql, this.chargeDueMapper, new Object[] {});
+        return chargesDueData;
 
     }
 
