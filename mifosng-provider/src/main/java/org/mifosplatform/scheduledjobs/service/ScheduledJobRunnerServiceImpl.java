@@ -5,16 +5,30 @@
  */
 package org.mifosplatform.scheduledjobs.service;
 
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+import org.joda.time.LocalDate;
+import org.mifosplatform.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.mifosplatform.infrastructure.core.data.ApiParameterError;
+import org.mifosplatform.infrastructure.core.domain.JdbcSupport;
 import org.mifosplatform.infrastructure.core.exception.PlatformApiDataValidationException;
+import org.mifosplatform.infrastructure.core.service.Page;
+import org.mifosplatform.infrastructure.core.service.PaginationHelper;
 import org.mifosplatform.infrastructure.core.service.RoutingDataSourceServiceFactory;
 import org.mifosplatform.infrastructure.core.service.ThreadLocalContextUtil;
 import org.mifosplatform.infrastructure.jobs.annotation.CronTarget;
 import org.mifosplatform.infrastructure.jobs.exception.JobExecutionException;
 import org.mifosplatform.infrastructure.jobs.service.JobName;
+import org.mifosplatform.organisation.holiday.domain.Holiday;
+import org.mifosplatform.organisation.holiday.domain.HolidayRepositoryWrapper;
+import org.mifosplatform.portfolio.calendar.service.CalendarReadPlatformService;
 import org.mifosplatform.portfolio.savings.DepositAccountType;
 import org.mifosplatform.portfolio.savings.data.DepositAccountData;
 import org.mifosplatform.portfolio.savings.data.SavingsAccountAnnualFeeData;
@@ -22,10 +36,12 @@ import org.mifosplatform.portfolio.savings.service.DepositAccountReadPlatformSer
 import org.mifosplatform.portfolio.savings.service.DepositAccountWritePlatformService;
 import org.mifosplatform.portfolio.savings.service.SavingsAccountChargeReadPlatformService;
 import org.mifosplatform.portfolio.savings.service.SavingsAccountWritePlatformService;
+import org.mifosplatform.scheduledjobs.data.FutureChargeScheduleInstallment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,18 +55,29 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     private final SavingsAccountChargeReadPlatformService savingsAccountChargeReadPlatformService;
     private final DepositAccountReadPlatformService depositAccountReadPlatformService;
     private final DepositAccountWritePlatformService depositAccountWritePlatformService;
+    private final CalendarReadPlatformService calendarReadPlatformService;
+    private final ConfigurationDomainService configurationDomainService;
+    private final HolidayRepositoryWrapper holidayRepository;
+    private final PaginationHelper<FutureChargeScheduleInstallment> paginationHelper;
 
     @Autowired
     public ScheduledJobRunnerServiceImpl(final RoutingDataSourceServiceFactory dataSourceServiceFactory,
             final SavingsAccountWritePlatformService savingsAccountWritePlatformService,
             final SavingsAccountChargeReadPlatformService savingsAccountChargeReadPlatformService,
             final DepositAccountReadPlatformService depositAccountReadPlatformService,
-            final DepositAccountWritePlatformService depositAccountWritePlatformService) {
+            final DepositAccountWritePlatformService depositAccountWritePlatformService,
+            final ConfigurationDomainService configurationDomainService,
+            final HolidayRepositoryWrapper holidayRepository,
+            final CalendarReadPlatformService calendarReadPlatformService) {
         this.dataSourceServiceFactory = dataSourceServiceFactory;
         this.savingsAccountWritePlatformService = savingsAccountWritePlatformService;
         this.savingsAccountChargeReadPlatformService = savingsAccountChargeReadPlatformService;
         this.depositAccountReadPlatformService = depositAccountReadPlatformService;
         this.depositAccountWritePlatformService = depositAccountWritePlatformService;
+        this.calendarReadPlatformService = calendarReadPlatformService;
+        this.configurationDomainService = configurationDomainService;
+        this.holidayRepository = holidayRepository;
+        this.paginationHelper = new PaginationHelper<>();
     }
 
     @Transactional
@@ -239,11 +266,36 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     @Override
     @CronTarget(jobName = JobName.PAY_DUE_SAVINGS_CHARGES)
     public void applyDueChargesForSavings() throws JobExecutionException {
-        final Collection<SavingsAccountAnnualFeeData> chargesDueData = this.savingsAccountChargeReadPlatformService
-                .retrieveChargesWithDue();
+    	
+        Page<SavingsAccountAnnualFeeData> chargesDueData = this.savingsAccountChargeReadPlatformService
+                .retrieveChargesWithDue(0);
         final StringBuilder errorMsg = new StringBuilder();
+        
+        applyDueChargesForSavingsPage(chargesDueData.getPageItems(), errorMsg);
+        
+        final int maxPageSize = 500;
+        int totalFilteredRecords = chargesDueData.getTotalFilteredRecords();
+        int offsetCounter = maxPageSize;
+        int processedRecords = maxPageSize;
+        
+        while(totalFilteredRecords > processedRecords) {
+        	chargesDueData = this.savingsAccountChargeReadPlatformService
+                    .retrieveChargesWithDue(offsetCounter);
+        	applyDueChargesForSavingsPage(chargesDueData.getPageItems(), errorMsg);
+        	offsetCounter += 500;
+        	processedRecords += 500;
+        }
 
-        for (final SavingsAccountAnnualFeeData savingsAccountReference : chargesDueData) {
+        /*
+         * throw exception if any charge payment fails.
+         */
+        if (errorMsg.length() > 0) { throw new JobExecutionException(errorMsg.toString()); }
+    }
+    
+    private StringBuilder applyDueChargesForSavingsPage(final List<SavingsAccountAnnualFeeData> chargesDueData,
+    		final StringBuilder errorMsg) {
+    	
+    	for (final SavingsAccountAnnualFeeData savingsAccountReference : chargesDueData) {
             try {
                 this.savingsAccountWritePlatformService.applyChargeDue(savingsAccountReference.getId(),
                         savingsAccountReference.getAccountId());
@@ -259,13 +311,74 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
         }
 
         logger.info(ThreadLocalContextUtil.getTenant().getName() + ": Savings accounts affected by update: " + chargesDueData.size());
+        
+        return errorMsg;
+    }
+    
+    private static final class FutureChargeScheduleInstallmentMapper implements RowMapper<FutureChargeScheduleInstallment> {
 
-        /*
-         * throw exception if any charge payment fails.
-         */
-        if (errorMsg.length() > 0) { throw new JobExecutionException(errorMsg.toString()); }
+        public String schema() {
+            return " cl.office_id, cs.savings_account_charge_id, ca.recurrence, ca.start_date, max(cs.installment) as "
+            	 + "last_installment_number, cs.due_amount, count(cs.id) As number_of_future_meetings, max(cs.due_date) " 
+            	 + "As last_future_meeting_date from ct_savings_account_charge_schedule cs inner join m_savings_account_charge "
+            	 + "c on c.id = cs.savings_account_charge_id and c.is_active = 1 and cs.due_date >= curdate() inner join "
+            	 + "m_calendar_instance ci on ci.entity_type_enum = 6 and ci.entity_id = cs.savings_account_charge_id "
+            	 + "inner join m_calendar ca on ca.id = ci.calendar_id inner join m_savings_account s on "
+            	 + " c.savings_account_id = s.id inner join m_client cl on s.client_id = cl.id and cl.status_enum <> 600 ";
+        }
+
+        @Override
+        public FutureChargeScheduleInstallment mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+
+        	final Long officeId = rs.getLong("office_id");
+        	final Long savingsAccountChargeId = rs.getLong("savings_account_charge_id");
+            final int numberOfFutureMeetings = rs.getInt("number_of_future_meetings");
+            final LocalDate fromDate = JdbcSupport.getLocalDate(rs, "last_future_meeting_date");
+            final String recurrence = rs.getString("recurrence");
+            final LocalDate startDate = JdbcSupport.getLocalDate(rs, "start_date");
+            final Long lastInstallmentNumber = rs.getLong("last_installment_number");
+            final BigDecimal dueAmount = rs.getBigDecimal("due_amount");
+
+            return new FutureChargeScheduleInstallment(officeId, savingsAccountChargeId, numberOfFutureMeetings, fromDate,
+            		lastInstallmentNumber, dueAmount, startDate, recurrence);
+        }
     }
 
+    @Override
+    @CronTarget(jobName = JobName.UPDATE_CHARGE_INSTALLMENT_DATES)
+    public void updateChargeInstallmentDates(){
+    	final JdbcTemplate jdbcTemplate = new JdbcTemplate(this.dataSourceServiceFactory.determineDataSourceService().retrieveDataSource());
+    	final FutureChargeScheduleInstallmentMapper rm = new FutureChargeScheduleInstallmentMapper();
+    	final StringBuilder sqlBuilder = new StringBuilder(200);
+    	final int maxPageSize = 500;
+    	
+    	final boolean isHolidayEnabled = this.configurationDomainService.isRescheduleInstallmentsOnHolidaysEnabled();
+    	
+        sqlBuilder.append("select SQL_CALC_FOUND_ROWS ");
+        sqlBuilder.append(rm.schema());
+        sqlBuilder.append(" group by cs.savings_account_charge_id");
+        sqlBuilder.append(" limit " + maxPageSize);
+    	final String sqlCountRows = "SELECT FOUND_ROWS()";
+    	
+        Page<FutureChargeScheduleInstallment> futureCalendars = this.paginationHelper.fetchPage(jdbcTemplate,
+        		sqlCountRows, sqlBuilder.toString(), new Object[] {}, rm);
+        
+        insertFutureChargeScheduleInstallments(futureCalendars, isHolidayEnabled, jdbcTemplate);
+        
+        int totalFilteredRecords = futureCalendars.getTotalFilteredRecords();
+        int offsetCounter = maxPageSize;
+        int processedRecords = maxPageSize;
+        
+        sqlBuilder.append(" offset " + offsetCounter);
+        while(totalFilteredRecords > processedRecords) {
+        	futureCalendars = this.paginationHelper.fetchPage(jdbcTemplate,
+            		sqlCountRows, sqlBuilder.toString().replaceFirst("offset.*$", "offset " + offsetCounter), new Object[] {}, rm);
+        	insertFutureChargeScheduleInstallments(futureCalendars, isHolidayEnabled, jdbcTemplate);
+        	offsetCounter += 500;
+        	processedRecords += 500;
+        }
+    }
+    
     @Transactional
     @Override
     @CronTarget(jobName = JobName.UPDATE_NPA)
@@ -313,6 +426,53 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
         }
 
         logger.info(ThreadLocalContextUtil.getTenant().getName() + ": Deposit accounts affected by update: " + depositAccounts.size());
+    }
+    
+    @Transactional
+    private void insertFutureChargeScheduleInstallments(Page<FutureChargeScheduleInstallment> futureCalendars,
+    		final boolean isHolidayEnabled, final JdbcTemplate jdbcTemplate) {
+    	
+    	final int maxAllowedPersistedCalendarDates = 10;
+    	
+    	List<FutureChargeScheduleInstallment> futureInstallmentsList = futureCalendars.getPageItems();
+    	
+    	StringBuilder insertSqlBuilder = null;
+    	ArrayList<String> insertStatements = new ArrayList<> ();
+    	
+    	for(FutureChargeScheduleInstallment futureInstallment : futureInstallmentsList) {
+    		
+    		long lastInstallmentNumber = futureInstallment.getLastInstallmentNumber();
+    		BigDecimal dueAmount = futureInstallment.getDueAmount();
+    		Long savingsAccountChargeId = futureInstallment.getSavingsAccountChargeId();
+    		int numberOfFutureMeetings = futureInstallment.getNumberOfFutureMeetings();
+    		
+    		if(numberOfFutureMeetings < 10) {
+    			
+    			List<Holiday> holidays = this.holidayRepository.findByOfficeIdAndGreaterThanDate(futureInstallment.getOfficeId(),
+        				futureInstallment.getFromDate().toDate());
+    			final int noOfDatesToProduce = maxAllowedPersistedCalendarDates - numberOfFutureMeetings;
+    			final Set<LocalDate> remainingRecurringDates = new HashSet<>(this.calendarReadPlatformService
+    					.generateRemainingRecurringDates(futureInstallment.getStartDate(), futureInstallment.getFromDate(),
+    							futureInstallment.getRecurrence(), noOfDatesToProduce,
+    							isHolidayEnabled, holidays));
+    			
+    			for(LocalDate futureDate : remainingRecurringDates) {
+    				insertSqlBuilder = new StringBuilder(170);
+    				insertSqlBuilder.append("INSERT INTO `ct_savings_account_charge_schedule`(`savings_account_charge_id`,"
+    						+ " `due_amount`, `installment`, `due_date`) values (");
+    				insertSqlBuilder.append(savingsAccountChargeId + "," + dueAmount
+    						+ "," + lastInstallmentNumber + ",'" + futureDate.toString() + "'");
+    				insertSqlBuilder.append(")");
+    				
+    				insertStatements.add(insertSqlBuilder.toString());
+    			}
+    		}
+    	}
+    	
+    	if(insertStatements.size() != 0) {
+    		String[] statements = new String[insertStatements.size()];
+    		jdbcTemplate.batchUpdate(insertStatements.toArray(statements));
+		}
     }
 
 }

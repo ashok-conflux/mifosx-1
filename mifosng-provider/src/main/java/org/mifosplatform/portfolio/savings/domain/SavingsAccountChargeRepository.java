@@ -20,4 +20,5 @@ public interface SavingsAccountChargeRepository extends JpaRepository<SavingsAcc
 
     @Query("from SavingsAccountCharge sac where sac.dueDate <=:transactionDate and sac.waived = 0 and sac.paid=0 order by sac.dueDate")
     List<SavingsAccountCharge> findPendingCharges(@Param("transactionDate") Date transactionDate);
+    
 }

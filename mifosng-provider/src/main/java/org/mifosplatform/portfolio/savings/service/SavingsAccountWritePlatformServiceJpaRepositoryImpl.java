@@ -72,6 +72,7 @@ import org.mifosplatform.portfolio.savings.data.SavingsAccountTransactionDataVal
 import org.mifosplatform.portfolio.savings.domain.SavingsAccount;
 import org.mifosplatform.portfolio.savings.domain.SavingsAccountAssembler;
 import org.mifosplatform.portfolio.savings.domain.SavingsAccountCharge;
+import org.mifosplatform.portfolio.savings.domain.SavingsAccountChargeAssembler;
 import org.mifosplatform.portfolio.savings.domain.SavingsAccountChargeRepositoryWrapper;
 import org.mifosplatform.portfolio.savings.domain.SavingsAccountDomainService;
 import org.mifosplatform.portfolio.savings.domain.SavingsAccountRepository;
@@ -107,6 +108,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     private final AccountTransfersReadPlatformService accountTransfersReadPlatformService;
     private final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService;
     private final ChargeRepositoryWrapper chargeRepository;
+    private final SavingsAccountChargeAssembler savingsAccountChargeAssembler;
     private final SavingsAccountChargeRepositoryWrapper savingsAccountChargeRepository;
     private final HolidayWritePlatformService holidayWritePlatformService;
     private final WorkingDaysWritePlatformService workingDaysWritePlatformService;
@@ -126,6 +128,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
             final AccountTransfersReadPlatformService accountTransfersReadPlatformService,
             final AccountAssociationsReadPlatformService accountAssociationsReadPlatformService,
             final ChargeRepositoryWrapper chargeRepository,
+            final SavingsAccountChargeAssembler savingsAccountChargeAssembler,
             final SavingsAccountChargeRepositoryWrapper savingsAccountChargeRepository,
             final HolidayWritePlatformService holidayWritePlatformService,
             final WorkingDaysWritePlatformService workingDaysWritePlatformService) {
@@ -144,6 +147,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         this.accountTransfersReadPlatformService = accountTransfersReadPlatformService;
         this.accountAssociationsReadPlatformService = accountAssociationsReadPlatformService;
         this.chargeRepository = chargeRepository;
+        this.savingsAccountChargeAssembler = savingsAccountChargeAssembler;
         this.savingsAccountChargeRepository = savingsAccountChargeRepository;
         this.holidayWritePlatformService = holidayWritePlatformService;
         this.workingDaysWritePlatformService = workingDaysWritePlatformService;
@@ -790,6 +794,12 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
 
         savingsAccount.addCharge(fmt, savingsAccountCharge, chargeDefinition);
 
+        this.savingAccountRepository.saveAndFlush(savingsAccount);
+        
+        if(savingsAccountCharge.isRecurringFee()) {
+	        this.savingsAccountChargeAssembler.generateScheduleForCharges(savingsAccount, false);
+        }
+        
         this.savingAccountRepository.saveAndFlush(savingsAccount);
 
         return new CommandProcessingResultBuilder() //

@@ -250,7 +250,7 @@ public class MeetingsApiResource {
             case SAVINGS:
                 resourceDetails.withSavingsId(entityId);
             break;
-            case INVALID:
+            default:
             break;
         }
         return resourceDetails.build();

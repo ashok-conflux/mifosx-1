@@ -197,8 +197,6 @@ public class DepositApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
                 final AccountNumberGenerator accountNoGenerator = this.accountIdentifierGeneratorFactory
                         .determineSavingsAccountNoGenerator(account.getId());
                 account.updateAccountNo(accountNoGenerator.generate());
-
-                this.savingAccountRepository.save(account);
             }
 
             // Save linked account information
@@ -210,6 +208,11 @@ public class DepositApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
                 final AccountAssociations accountAssociations = AccountAssociations.associateSavingsAccount(account, savingsAccount);
                 this.accountAssociationsRepository.save(accountAssociations);
             }
+            
+            boolean isModify = false;
+            this.savingsAccountChargeAssembler.generateScheduleForCharges(account, isModify);
+            
+            this.savingAccountRepository.save(account);
 
             final Long savingsId = account.getId();
 
@@ -251,6 +254,7 @@ public class DepositApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
 
             // FIXME: Avoid save separately (Calendar instance requires account
             // details)
+            
             final MathContext mc = MathContext.DECIMAL64;
             final Calendar calendar = calendarInstance.getCalendar();
             final boolean isHolidayEnabled = this.configurationDomainService.isRescheduleRepaymentsOnHolidaysEnabled();
@@ -261,6 +265,10 @@ public class DepositApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
             final boolean isPreMatureClosure = false;
             account.updateMaturityDateAndAmount(mc, isPreMatureClosure);
             account.validateApplicableInterestRate();
+            
+            boolean isModify = false;
+            this.savingsAccountChargeAssembler.generateScheduleForCharges(account, isModify);
+            
             this.savingAccountRepository.save(account);
 
             return new CommandProcessingResultBuilder() //
@@ -549,6 +557,8 @@ public class DepositApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
             final Set<SavingsAccountCharge> charges = this.savingsAccountChargeAssembler.fromParsedJson(command.parsedJson(), account
                     .getCurrency().getCode());
             final boolean updated = account.update(charges);
+            boolean isModify = true;
+            this.savingsAccountChargeAssembler.generateScheduleForCharges(account, isModify);
             if (!updated) {
                 changes.remove("charges");
             }

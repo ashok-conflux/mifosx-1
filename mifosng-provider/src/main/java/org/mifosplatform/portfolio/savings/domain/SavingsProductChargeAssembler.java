@@ -89,7 +89,8 @@ public class SavingsProductChargeAssembler {
                             ChargeCalculationType.fromInt(chargeCalculationType);
                         }
                         final SavingsAccountCharge savingsAccountCharge = SavingsAccountCharge.createNewWithoutSavingsAccount(
-                                chargeDefinition, amount, chargeTime, chargeCalculation, dueDate, true, feeOnMonthDay, feeInterval);
+                                chargeDefinition, amount, chargeTime, chargeCalculation, dueDate, true, feeOnMonthDay, feeInterval,
+                                false);
                         savingsAccountCharges.add(savingsAccountCharge);
                     } else {
                         final Long savingsAccountChargeId = id;
@@ -97,7 +98,7 @@ public class SavingsProductChargeAssembler {
                                 .findOne(savingsAccountChargeId);
                         if (savingsAccountCharge == null) { throw new SavingsAccountChargeNotFoundException(savingsAccountChargeId); }
 
-                        savingsAccountCharge.update(amount, dueDate, null, null);
+                        savingsAccountCharge.update(amount, dueDate, null, null, null);
 
                         savingsAccountCharges.add(savingsAccountCharge);
                     }

@@ -20,7 +20,6 @@ import org.mifosplatform.infrastructure.core.service.RoutingDataSource;
 import org.mifosplatform.organisation.holiday.domain.Holiday;
 import org.mifosplatform.organisation.holiday.service.HolidayUtil;
 import org.mifosplatform.portfolio.calendar.data.CalendarData;
-import org.mifosplatform.portfolio.calendar.data.FutureCalendarData;
 import org.mifosplatform.portfolio.calendar.domain.CalendarEntityType;
 import org.mifosplatform.portfolio.calendar.domain.CalendarType;
 import org.mifosplatform.portfolio.calendar.exception.CalendarNotFoundException;
@@ -235,28 +234,21 @@ public class CalendarReadPlatformServiceImpl implements CalendarReadPlatformServ
     }
     
     @Override
-    public Collection<LocalDate> generateRemainingRecurringDates(final FutureCalendarData futureCalendarData,
-    		final int maxAllowedPersistedMeetingDates, final boolean isHolidayEnabled, final List<Holiday> holidays) {
-		
-    	final int maxCount = maxAllowedPersistedMeetingDates - futureCalendarData.getNumberOfFutureCalendars();
-    	
-    	final String rrule = futureCalendarData.getRecurrence();
-    	
-    	LocalDate fromDate = futureCalendarData.getFromDate();
+    public Collection<LocalDate> generateRemainingRecurringDates(final LocalDate startDate, 
+    		LocalDate fromDate, final String recurrenceRule, final int noOfDatesToProduce,
+    		final boolean isHolidayEnabled, final List<Holiday> holidays) {
     	
     	if(fromDate != null)
     		fromDate = fromDate.plusDays(1);
-    	else 
-    		fromDate = DateUtils.getLocalDateOfTenant();
     	
-        final LocalDate seedDate = this.getSeedDate(futureCalendarData.getStartDate());
+        final LocalDate seedDate = this.getSeedDate(startDate);
         
-        final LocalDate periodStartDate = this.getPeriodStartDate(seedDate, futureCalendarData.getStartDate(), fromDate);
+        final LocalDate periodStartDate = this.getPeriodStartDate(seedDate, startDate, fromDate);
         
     	final LocalDate periodEndDate = this.getPeriodEndDate(null, null);
     	
-    	final List<LocalDate> recurringDates = new ArrayList<LocalDate>(CalendarUtils.getRecurringDates(rrule, seedDate, periodStartDate, periodEndDate,
-                maxCount));
+    	final List<LocalDate> recurringDates = new ArrayList<LocalDate>(CalendarUtils.getRecurringDates(recurrenceRule, seedDate,
+    			periodStartDate, periodEndDate, noOfDatesToProduce));
     	
     	for (final LocalDate oldDate : recurringDates) {
     		    LocalDate newScheduleDate = null;

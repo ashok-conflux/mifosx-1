@@ -64,6 +64,8 @@ public class SavingsAccountChargeData {
     private final LocalDate inactivationDate;
 
     private final Collection<ChargeData> chargeOptions;
+    
+    private final Boolean isCalendarInherited;
 
     public static SavingsAccountChargeData template(final Collection<ChargeData> chargeOptions) {
         final Long id = null;
@@ -86,10 +88,11 @@ public class SavingsAccountChargeData {
         final Integer feeInterval = null;
         final Boolean isActive = null;
         final LocalDate inactivationDate = null;
+        final Boolean isCalendarInherited = false;
 
         return new SavingsAccountChargeData(id, chargeId, accountId, name, chargeTimeType, dueAsOfDate, chargeCalculationType, percentage,
                 amountPercentageAppliedTo, currency, amount, amountPaid, amountWaived, amountWrittenOff, amountOutstanding, chargeOptions,
-                penalty, feeOnMonthDay, feeInterval, isActive, inactivationDate);
+                penalty, feeOnMonthDay, feeInterval, isActive, inactivationDate, isCalendarInherited);
     }
 
     public static SavingsAccountChargeData instance(final Long id, final Long chargeId, final Long accountId, final String name,
@@ -97,11 +100,12 @@ public class SavingsAccountChargeData {
             final BigDecimal amountWrittenOff, final BigDecimal amountOutstanding, final EnumOptionData chargeTimeType,
             final LocalDate dueAsOfDate, final EnumOptionData chargeCalculationType, final BigDecimal percentage,
             final BigDecimal amountPercentageAppliedTo, final Collection<ChargeData> chargeOptions, final boolean penalty,
-            final MonthDay feeOnMonthDay, final Integer feeInterval, final Boolean isActive, final LocalDate inactivationDate) {
+            final MonthDay feeOnMonthDay, final Integer feeInterval, final Boolean isActive, final LocalDate inactivationDate,
+            final Boolean isCalendarInherited) {
 
         return new SavingsAccountChargeData(id, chargeId, accountId, name, chargeTimeType, dueAsOfDate, chargeCalculationType, percentage,
                 amountPercentageAppliedTo, currency, amount, amountPaid, amountWaived, amountWrittenOff, amountOutstanding, chargeOptions,
-                penalty, feeOnMonthDay, feeInterval, isActive, inactivationDate);
+                penalty, feeOnMonthDay, feeInterval, isActive, inactivationDate, isCalendarInherited);
     }
 
     private SavingsAccountChargeData(final Long id, final Long chargeId, final Long accountId, final String name,
@@ -109,7 +113,8 @@ public class SavingsAccountChargeData {
             final BigDecimal percentage, final BigDecimal amountPercentageAppliedTo, final CurrencyData currency, final BigDecimal amount,
             final BigDecimal amountPaid, final BigDecimal amountWaived, final BigDecimal amountWrittenOff,
             final BigDecimal amountOutstanding, final Collection<ChargeData> chargeOptions, final boolean penalty,
-            final MonthDay feeOnMonthDay, final Integer feeInterval, final Boolean isActive, final LocalDate inactivationDate) {
+            final MonthDay feeOnMonthDay, final Integer feeInterval, final Boolean isActive, final LocalDate inactivationDate,
+            final Boolean isCalendarInherited) {
         this.id = id;
         this.chargeId = chargeId;
         this.accountId = accountId;
@@ -132,6 +137,7 @@ public class SavingsAccountChargeData {
         this.feeInterval = feeInterval;
         this.isActive = isActive;
         this.inactivationDate = inactivationDate;
+        this.isCalendarInherited = isCalendarInherited;
     }
 
     private BigDecimal getAmountOrPercentage() {

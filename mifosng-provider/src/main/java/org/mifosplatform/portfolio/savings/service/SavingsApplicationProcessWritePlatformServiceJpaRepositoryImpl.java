@@ -152,6 +152,13 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
             generateAccountNumber(account);
 
             final Long savingsId = account.getId();
+            
+            // FIXME: Avoid save separately (Calendar instance requires account
+            // details)
+            boolean isModify = false;
+            this.savingsAccountChargeAssembler.generateScheduleForCharges(account, isModify);
+            this.savingAccountRepository.save(account);
+            
             return new CommandProcessingResultBuilder() //
                     .withCommandId(command.commandId()) //
                     .withEntityId(savingsId) //
@@ -243,11 +250,15 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
                     final Set<SavingsAccountCharge> charges = this.savingsAccountChargeAssembler.fromParsedJson(command.parsedJson(),
                             account.getCurrency().getCode());
                     final boolean updated = account.update(charges);
+                    boolean isModify = true;
+                    this.savingsAccountChargeAssembler.generateScheduleForCharges(account, isModify);
                     if (!updated) {
                         changes.remove("charges");
                     }
                 }
-
+                
+                
+                
                 this.savingAccountRepository.saveAndFlush(account);
             }
 
@@ -466,9 +477,16 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
         if (amountForDeposit.isGreaterThanZero()) {
             this.savingAccountRepository.save(account);
         }
+        
         this.savingsAccountWritePlatformService.processPostActiveActions(account, savingsAccountDataDTO.getFmt(), existingTransactionIds,
                 existingReversedTransactionIds);
         this.savingAccountRepository.save(account);
+        
+        if(savingsAccountDataDTO.getSavingsProduct() != null) {
+	        boolean isModify = false;
+	        this.savingsAccountChargeAssembler.generateScheduleForCharges(account, isModify);
+	        this.savingAccountRepository.save(account);
+        }
 
         generateAccountNumber(account);
         // post journal entries for activation charges
@@ -479,4 +497,5 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
                 .setRollbackTransaction(rollbackTransaction)//
                 .build();
     }
+    
 }

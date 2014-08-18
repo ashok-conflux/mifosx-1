@@ -11,7 +11,8 @@ import java.util.Map;
 public enum CalendarEntityType {
 
     INVALID(0, "calendarEntityType.invalid"), CLIENTS(1, "calendarEntityType.clients"), GROUPS(2, "calendarEntityType.groups"), LOANS(3,
-            "calendarEntityType.loans"), CENTERS(4, "calendarEntityType.centers"), SAVINGS(5, "calendarEntityType.savings");
+            "calendarEntityType.loans"), CENTERS(4, "calendarEntityType.centers"), SAVINGS(5, "calendarEntityType.savings"),
+            SAVINGS_CHARGES(6, "calendarEntityType.savings.charges");
 
     private final Integer value;
     private final String code;
@@ -137,6 +138,18 @@ public enum CalendarEntityType {
 
     public boolean isSavings() {
         return this.value.equals(CalendarEntityType.SAVINGS.getValue());
+    }
+    
+    public static boolean isSavingsCharge(final Integer value) {
+        return CalendarEntityType.SAVINGS_CHARGES.value.equals(value) ? true : false;
+    }
+
+    public static boolean isSavingsCharge(final String name) {
+        return CalendarEntityType.SAVINGS_CHARGES.name().equalsIgnoreCase(name) ? true : false;
+    }
+
+    public boolean isSavingsCharge() {
+        return this.value.equals(CalendarEntityType.SAVINGS_CHARGES.getValue());
     }
 
 }
