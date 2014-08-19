@@ -1900,7 +1900,8 @@ public class SavingsAccount extends AbstractPersistable<Long> {
         this.charges.remove(charge);
     }
 
-    public void waiveCharge(final Long savingsAccountChargeId) {
+    public void waiveCharge(final Long savingsAccountChargeId, final BigDecimal amountWaived,
+    		final LocalDate transactionDate) {
 
         final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
         final DataValidatorBuilder baseDataValidator = new DataValidatorBuilder(dataValidationErrors)
@@ -1936,10 +1937,17 @@ public class SavingsAccount extends AbstractPersistable<Long> {
             baseDataValidator.reset().failWithCodeNoParameterAddedToErrorCode("transaction.invalid.account.charge.is.paid");
             if (!dataValidationErrors.isEmpty()) { throw new PlatformApiDataValidationException(dataValidationErrors); }
         }
+        
+        Money chargeWaived = Money.of(currency, amountWaived);
+        if (!savingsAccountCharge.getAmountOutstanding(getCurrency()).isGreaterThanOrEqualTo(chargeWaived)) {
+            baseDataValidator.reset().failWithCodeNoParameterAddedToErrorCode("transaction.invalid.charge.amount.waived.in.excess");
+            if (!dataValidationErrors.isEmpty()) { throw new PlatformApiDataValidationException(dataValidationErrors); }
+        }
 
         // waive charge
-        final Money amountWaived = savingsAccountCharge.waive(getCurrency());
-        handleWaiverChargeTransactions(savingsAccountCharge, amountWaived);
+        chargeWaived = savingsAccountCharge.waive(getCurrency(), chargeWaived,
+        		transactionDate);
+        handleWaiverChargeTransactions(savingsAccountCharge, chargeWaived, transactionDate);
 
     }
 
@@ -2101,15 +2109,14 @@ public class SavingsAccount extends AbstractPersistable<Long> {
 
         final Money chargePaid = Money.of(currency, amountPaid);
         if (!savingsAccountCharge.getAmountOutstanding(getCurrency()).isGreaterThanOrEqualTo(chargePaid)) {
-            baseDataValidator.reset().failWithCodeNoParameterAddedToErrorCode("transaction.invalid.charge.amount.paid.in.access");
+            baseDataValidator.reset().failWithCodeNoParameterAddedToErrorCode("transaction.invalid.charge.amount.paid.in.excess");
             if (!dataValidationErrors.isEmpty()) { throw new PlatformApiDataValidationException(dataValidationErrors); }
         }
-
         this.payCharge(savingsAccountCharge, chargePaid, transactionDate);
     }
 
-    public void payCharge(final SavingsAccountCharge savingsAccountCharge, final Money amountPaid, final LocalDate transactionDate) {
-        savingsAccountCharge.pay(getCurrency(), amountPaid);
+    public void payCharge(final SavingsAccountCharge savingsAccountCharge, Money amountPaid, final LocalDate transactionDate) {
+    	amountPaid = savingsAccountCharge.pay(getCurrency(), amountPaid, transactionDate);
         handlePayChargeTransactions(savingsAccountCharge, amountPaid, transactionDate);
     }
 
@@ -2128,9 +2135,10 @@ public class SavingsAccount extends AbstractPersistable<Long> {
         handleChargeTransactions(savingsAccountCharge, chargeTransaction);
     }
 
-    private void handleWaiverChargeTransactions(SavingsAccountCharge savingsAccountCharge, Money transactionAmount) {
+    private void handleWaiverChargeTransactions(SavingsAccountCharge savingsAccountCharge,
+    		Money transactionAmount, final LocalDate transactionDate) {
         final SavingsAccountTransaction chargeTransaction = SavingsAccountTransaction.waiver(this, office(),
-                DateUtils.getLocalDateOfTenant(), transactionAmount);
+        		transactionDate, transactionAmount);
         handleChargeTransactions(savingsAccountCharge, chargeTransaction);
     }
 

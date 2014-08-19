@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 
 import javax.persistence.CascadeType;
@@ -28,6 +29,7 @@ import javax.persistence.FetchType;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
 import javax.persistence.OneToMany;
+import javax.persistence.OrderBy;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
@@ -68,11 +70,16 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     @JoinColumn(name = "charge_id", referencedColumnName = "id", nullable = false)
     private Charge charge;
     
+    @OrderBy(value = "installmentNumber, dueDate")
     @OneToMany(mappedBy = "savingsAccountCharge", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments;
 
     @Column(name = "charge_time_enum", nullable = false)
     private Integer chargeTime;
+    
+    @Temporal(TemporalType.DATE)
+    @Column(name = "start_date", nullable = false)
+    private Date startDate;
 
     @Temporal(TemporalType.DATE)
     @Column(name = "charge_due_date")
@@ -180,7 +187,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
                 throw new SavingsAccountChargeWithoutMandatoryFieldException("savingsaccount.charge", dueAsOfDateParamName,
                         defaultUserMessage, chargeDefinition.getId(), chargeDefinition.getName());
             }
-
+            this.startDate = dueDate.toDate();
         }
 
         if (isAnnualFee() || isMonthlyFee()) {
@@ -193,6 +200,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
 
             this.feeOnMonth = feeOnMonthDay.getMonthOfYear();
             this.feeOnDay = feeOnMonthDay.getDayOfMonth();
+            this.startDate = getApplicableDueDate().toDate();
 
         } else if (isWeeklyFee()) {
             if (dueDate == null) {
@@ -205,6 +213,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
              * Monday=1, Tuesday=2
              */
             this.feeOnDay = dueDate.getDayOfWeek();
+            this.startDate = dueDate.toDate();
         } else {
             this.feeOnDay = null;
             this.feeOnMonth = null;
@@ -235,7 +244,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
             this.amountOutstanding = BigDecimal.ZERO;
         }
 
-        this.paid = determineIfFullyPaid();
+        this.paid = false;
         this.status = status;
         
         if(isCalendarInherited != null && isRecurringFee())
@@ -280,7 +289,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
                 this.amountPercentageAppliedTo = transactionAmount;
                 this.amount = percentageOf(this.amountPercentageAppliedTo, this.percentage);
                 this.amountPaid = null;
-                this.amountOutstanding = calculateOutstanding();
+                this.amountOutstanding = calculateOutstandingLocal();
                 this.amountWaived = null;
                 this.amountWrittenOff = null;
             break;
@@ -319,66 +328,212 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         this.paid = false;
         this.waived = false;
     }
+    
+    private Money handleInstallmentPayment(final SavingsAccountChargeScheduleInstallment currentInstallment,
+            final Money transactionAmountUnprocessed, final LocalDate transactionDate) {
 
-    public void undoPayment(final MonetaryCurrency currency, final Money transactionAmount) {
-        Money amountPaid = getAmountPaid(currency);
-        amountPaid = amountPaid.minus(transactionAmount);
-        this.amountPaid = amountPaid.getAmount();
-        this.amountOutstanding = calculateAmountOutstanding(currency);
+        Money transactionAmountRemaining = transactionAmountUnprocessed;
+        Money depositAmountPortion = Money.zero(transactionAmountRemaining.getCurrency());
 
-        if (this.isWithdrawalFee()) {
-            this.amountOutstanding = BigDecimal.ZERO;
+        depositAmountPortion = currentInstallment.payInstallment(transactionDate, transactionAmountRemaining);
+        transactionAmountRemaining = transactionAmountRemaining.minus(depositAmountPortion);
+
+        return transactionAmountRemaining;
+
+    }
+    
+    public Money pay(final MonetaryCurrency currency, Money amountPaid,
+    		final LocalDate transactionDate) {
+        Money amountPaidToDate = Money.of(currency, this.amountPaid); 
+        Money amountOutstanding = Money.of(currency, this.amountOutstanding);
+        Money transactionAmountRemaining = amountPaid;
+        
+        if(isRecurringFee()) {
+        	
+        	List<SavingsAccountChargeScheduleInstallment> installments = 
+        			savingsAccountChargeScheduleInstallments();
+        			
+        	for(SavingsAccountChargeScheduleInstallment installment : installments) {
+        		if (installment.isNotFullyPaidOff() && transactionAmountRemaining.isGreaterThanZero()) {
+                    if (installment.getDueDate().isAfter(getDueLocalDate())) {
+                    	break;
+                    }
+                    transactionAmountRemaining = handleInstallmentPayment(installment,
+                    		transactionAmountRemaining, transactionDate);
+                }
+        	}
+        	
         }
-        // to reset amount outstanding for annual and monthly fee
-        resetPropertiesForRecurringFees();
-        updateToPreviousDueDate();// reset annual and monthly due date.
-        this.paid = false;
-        this.status = true;
-    }
-
-    public Money waive(final MonetaryCurrency currency) {
-        Money amountWaivedToDate = Money.of(currency, this.amountWaived);
-        Money amountOutstanding = Money.of(currency, this.amountOutstanding);
-        this.amountWaived = amountWaivedToDate.plus(amountOutstanding).getAmount();
-        this.amountOutstanding = BigDecimal.ZERO;
-        this.waived = true;
-
-        resetPropertiesForRecurringFees();
-        updateNextDueDateForRecurringFees();
-
-        return amountOutstanding;
-    }
-
-    public void undoWaiver(final MonetaryCurrency currency, final Money transactionAmount) {
-        Money amountWaived = getAmountWaived(currency);
-        amountWaived = amountWaived.minus(transactionAmount);
-        this.amountWaived = amountWaived.getAmount();
-        this.amountOutstanding = calculateAmountOutstanding(currency);
-        this.waived = false;
-        this.status = true;
-
-        resetPropertiesForRecurringFees();
-        updateToPreviousDueDate();
-    }
-
-    public Money pay(final MonetaryCurrency currency, final Money amountPaid) {
-        Money amountPaidToDate = Money.of(currency, this.amountPaid);
-        Money amountOutstanding = Money.of(currency, this.amountOutstanding);
-        amountPaidToDate = amountPaidToDate.plus(amountPaid);
-        amountOutstanding = amountOutstanding.minus(amountPaid);
+        
+        if(transactionAmountRemaining.isEqualTo(Money.zero(currency))) {
+	    	amountPaidToDate = amountPaidToDate.plus(amountPaid);
+	    	amountOutstanding = amountOutstanding.minus(amountPaid);
+        } else {
+        	Money actualAmountPaid = amountPaid.minus(transactionAmountRemaining);
+        	amountPaidToDate = amountPaidToDate.plus(actualAmountPaid);
+	    	amountOutstanding = amountOutstanding.minus(actualAmountPaid);
+        }
+        	
         this.amountPaid = amountPaidToDate.getAmount();
         this.amountOutstanding = amountOutstanding.getAmount();
         this.paid = determineIfFullyPaid();
 
         if (BigDecimal.ZERO.compareTo(this.amountOutstanding) == 0) {
             // full outstanding is paid, update to next due date
-            updateNextDueDateForRecurringFees();
+        	updateToNextDueDate();
             resetPropertiesForRecurringFees();
         }
 
-        return Money.of(currency, this.amountOutstanding);
+        return amountPaid;
+    }
+    
+    private Money handleInstallmentWaive(final SavingsAccountChargeScheduleInstallment currentInstallment,
+            final Money transactionAmountUnprocessed, final LocalDate transactionDate) {
+
+        Money transactionAmountRemaining = transactionAmountUnprocessed;
+        Money waiveAmountPortion = Money.zero(transactionAmountRemaining.getCurrency());
+
+        waiveAmountPortion = currentInstallment.waive(transactionDate, transactionAmountRemaining);
+        transactionAmountRemaining = transactionAmountRemaining.minus(waiveAmountPortion);
+
+        return transactionAmountRemaining;
+
+    }
+    
+    public Money waive(final MonetaryCurrency currency, Money amountWaived,
+    		final LocalDate transactionDate) {
+        Money amountWaivedToDate = Money.of(currency, this.amountWaived);
+        Money amountOutstanding = Money.of(currency, this.amountOutstanding);
+        Money transactionAmountRemaining = amountWaived;
+        
+        if(isRecurringFee()) {
+        	List<SavingsAccountChargeScheduleInstallment> installments = 
+        			savingsAccountChargeScheduleInstallments();
+        	
+        	for(SavingsAccountChargeScheduleInstallment installment : installments) {
+        		if (installment.isNotFullyPaidOff() && amountWaived.isGreaterThanZero()) {
+                    if (installment.getDueDate().isAfter(getDueLocalDate())) {
+                    	break;
+                    }
+                    transactionAmountRemaining = handleInstallmentWaive(installment,
+                    		transactionAmountRemaining, transactionDate);
+        		}
+        	}
+        }
+        
+        if(transactionAmountRemaining.isEqualTo(Money.zero(currency))) {
+        	amountWaivedToDate = amountWaivedToDate.plus(amountWaived);
+            amountOutstanding = amountOutstanding.minus(amountWaived);
+        } else {
+        	Money actualAmountWaived = amountWaived.minus(transactionAmountRemaining);
+        	amountWaivedToDate = amountWaivedToDate.plus(actualAmountWaived);
+	    	amountOutstanding = amountOutstanding.minus(actualAmountWaived);
+        }
+        
+        
+        this.amountWaived = amountWaivedToDate.getAmount();
+        this.amountOutstanding = amountOutstanding.getAmount();
+        
+        this.waived = determineIfFullyPaid();
+
+        if (BigDecimal.ZERO.compareTo(this.amountOutstanding) == 0) {
+            // full outstanding is waived, update to next due date
+        	updateToNextDueDate();
+            resetPropertiesForRecurringFees();
+        }
+
+        return amountWaived;
+    }
+    
+    private Money handleUndoWaiver(final SavingsAccountChargeScheduleInstallment currentInstallment,
+            final Money transactionAmountUnprocessed) {
+
+        Money transactionAmountRemaining = transactionAmountUnprocessed;
+        Money undoneAmountPortion = Money.zero(transactionAmountRemaining.getCurrency());
+
+        undoneAmountPortion = currentInstallment.undoWaive(transactionAmountRemaining);
+        transactionAmountRemaining = transactionAmountRemaining.minus(undoneAmountPortion);
+
+        return transactionAmountRemaining;
+    }
+    
+    private Money handleUndoPayment(final SavingsAccountChargeScheduleInstallment currentInstallment,
+            final Money transactionAmountUnprocessed) {
+
+        Money transactionAmountRemaining = transactionAmountUnprocessed;
+        Money undoneAmountPortion = Money.zero(transactionAmountRemaining.getCurrency());
+
+        undoneAmountPortion = currentInstallment.undoPayment(transactionAmountRemaining);
+        transactionAmountRemaining = transactionAmountRemaining.minus(undoneAmountPortion);
+
+        return transactionAmountRemaining;
+
     }
 
+    public void undoWaiver(final MonetaryCurrency currency, final Money transactionAmount) {
+        Money amountWaived = getAmountWaived(currency);
+        amountWaived = amountWaived.minus(transactionAmount);
+        this.amountWaived = amountWaived.getAmount();
+        
+        Money transactionAmountRemaining = transactionAmount;
+        
+        if(isRecurringFee()) {
+        	
+        	ListIterator<SavingsAccountChargeScheduleInstallment> iter = 
+        			this.savingsAccountChargeScheduleInstallments.listIterator
+        			(this.savingsAccountChargeScheduleInstallments.size());
+        	
+        	while (iter.hasPrevious()) {
+        		SavingsAccountChargeScheduleInstallment installment = iter.previous();
+            	if (installment.getWaivedAmount(currency).isNotEqualTo(Money.zero(currency))
+            			 && transactionAmountRemaining.isGreaterThanZero()) {
+            		transactionAmountRemaining = handleUndoWaiver(installment, transactionAmountRemaining);
+                }
+            }
+        	
+        	this.amountOutstanding = calculateOutstandingSchedule();
+        } else
+        	this.amountOutstanding = calculateOutstandingLocal();
+        
+        this.paid = false;
+        this.waived = false;
+        this.status = true;
+    }
+
+    public void undoPayment(final MonetaryCurrency currency, final Money transactionAmount) {
+        Money amountPaid = getAmountPaid(currency);
+        amountPaid = amountPaid.minus(transactionAmount);
+        this.amountPaid = amountPaid.getAmount();
+        
+        Money transactionAmountRemaining = transactionAmount;
+        
+        if(isRecurringFee()) {
+        	
+        	ListIterator<SavingsAccountChargeScheduleInstallment> iter = 
+        			this.savingsAccountChargeScheduleInstallments.listIterator
+        			(this.savingsAccountChargeScheduleInstallments.size());
+        	
+        	while (iter.hasPrevious()) {
+        		SavingsAccountChargeScheduleInstallment installment = iter.previous();
+            	if (installment.getPaidAmount(currency).isNotEqualTo(Money.zero(currency))
+            			&& transactionAmountRemaining.isGreaterThanZero()) {
+            		transactionAmountRemaining = handleUndoPayment(installment, transactionAmountRemaining);
+                }
+            }
+        	
+        	this.amountOutstanding = calculateOutstandingSchedule();
+        } else
+        	this.amountOutstanding = calculateOutstandingLocal();
+        
+        if (this.isWithdrawalFee()) {
+            this.amountOutstanding = BigDecimal.ZERO;
+        }
+        
+        this.paid = false;
+        this.waived = false;
+        this.status = true;
+    }
+    
     private BigDecimal calculateAmountOutstanding(final MonetaryCurrency currency) {
         return getAmount(currency).minus(getAmountWaived(currency)).minus(getAmountPaid(currency)).getAmount();
     }
@@ -421,7 +576,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
                     this.percentage = amount;
                     this.amountPercentageAppliedTo = transactionAmount;
                     this.amount = percentageOf(this.amountPercentageAppliedTo, this.percentage);
-                    this.amountOutstanding = calculateOutstanding();
+                    this.amountOutstanding = calculateOutstandingLocal();
                 break;
                 case PERCENT_OF_AMOUNT_AND_INTEREST:
                     this.percentage = amount;
@@ -486,13 +641,13 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
                 break;
                 case FLAT:
                     this.amount = newValue;
-                    this.amountOutstanding = calculateOutstanding();
+                    this.amountOutstanding = calculateOutstandingLocal();
                 break;
                 case PERCENT_OF_AMOUNT:
                     this.percentage = newValue;
                     this.amountPercentageAppliedTo = null;
                     this.amount = percentageOf(this.amountPercentageAppliedTo, this.percentage);
-                    this.amountOutstanding = calculateOutstanding();
+                    this.amountOutstanding = calculateOutstandingLocal();
                 break;
                 case PERCENT_OF_AMOUNT_AND_INTEREST:
                     this.percentage = newValue;
@@ -553,10 +708,12 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     }
 
     private boolean determineIfFullyPaid() {
-        return BigDecimal.ZERO.compareTo(calculateOutstanding()) == 0;
+    	if(isRecurringFee())
+    		return BigDecimal.ZERO.compareTo(calculateOutstandingSchedule()) == 0;
+    	return BigDecimal.ZERO.compareTo(calculateOutstandingLocal()) == 0;
     }
 
-    private BigDecimal calculateOutstanding() {
+    private BigDecimal calculateOutstandingLocal() {
 
         BigDecimal amountPaidLocal = BigDecimal.ZERO;
         if (this.amountPaid != null) {
@@ -576,6 +733,22 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         final BigDecimal totalAccountedFor = amountPaidLocal.add(amountWaivedLocal).add(amountWrittenOffLocal);
 
         return this.amount.subtract(totalAccountedFor);
+    }
+    
+    private BigDecimal calculateOutstandingSchedule() {
+    	
+    	BigDecimal totalOutstandingSchedule = BigDecimal.ZERO;
+    	ListIterator<SavingsAccountChargeScheduleInstallment> iter = 
+    			savingsAccountChargeScheduleInstallments().listIterator();
+    	SavingsAccountChargeScheduleInstallment installment;
+    	
+    	do{
+    		installment = iter.next();
+        	totalOutstandingSchedule = totalOutstandingSchedule.add(installment
+        			.getInstallmentAmountOverdue(this.savingsAccount.getCurrency()).getAmount());
+    	}while(!installment.getDueDate().isEqual(getDueLocalDate()) && iter.hasNext());
+
+        return totalOutstandingSchedule;
     }
 
     private BigDecimal percentageOf(final BigDecimal value, final BigDecimal percentage) {
@@ -648,8 +821,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     public Integer getFeeInterval() {
     	if(isAnnualFee())
     		return 1;
-    	else
-    		return this.feeInterval;
+		return this.feeInterval;
     }
 
     /**
@@ -799,6 +971,26 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         }
 
     }
+    
+    //From installments
+    public void updateToNextDueDate() {
+    	List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments =
+    			savingsAccountChargeScheduleInstallments();
+    	ListIterator<SavingsAccountChargeScheduleInstallment> iter = 
+    			savingsAccountChargeScheduleInstallments.listIterator();
+    	
+    	while(iter.hasNext()) {
+    		SavingsAccountChargeScheduleInstallment installment = iter.next();
+    		if(installment.getDueDate().isEqual(getDueLocalDate())) {
+    			installment = iter.next();
+    			this.dueDate = installment.getDueDate().toDate();
+    			this.amountOutstanding = this.amountOutstanding.add(
+    					installment.getInstallmentAmountOverdue(
+    					this.savingsAccount.getCurrency()).getAmount());
+    			break;
+    		}
+    	}
+    }
 
     private LocalDate calculateNextDueDate(final LocalDate date) {
         LocalDate nextDueLocalDate = null;
@@ -919,6 +1111,8 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         final LocalDate installmentsTillDate = calculateInstallmentsTillDate(installmentDate, frequency, recurringEvery);
         int installmentNumber = 1;
         final BigDecimal dueAmount = this.amount;
+        boolean chargeDueDateUpdatedFlag = false;
+        
         while (installmentsTillDate.isAfter(installmentDate)) {
         	SavingsAccountChargeScheduleInstallment installment = null;
         	if (isHolidayEnabled) {
@@ -930,18 +1124,42 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
                     installmentNumber, installmentDate.toDate(), dueAmount);
             }
         	savingsAccountChargeScheduleInstallments.add(installment);
+            
+        	if(!chargeDueDateUpdatedFlag) 
+        		chargeDueDateUpdatedFlag = updateFields(installment.getDueDate(),
+        				this.amount, chargeDueDateUpdatedFlag);
+        	
             installmentDate = CalendarUtils.getNextScheduleDate(calendar, installmentDate, workingDays);
             installmentNumber += 1;
         }
     }
     
+    //On schedule generation and update
+    private boolean updateFields(final LocalDate dueDate, final BigDecimal dueAmount,
+    		boolean chargeDueDateUpdatedFlag) {
+    	
+    	LocalDate today = DateUtils.getLocalDateOfTenant();
+        
+    	if(dueDate.isAfter(today)) {
+    		this.dueDate = dueDate.toDate();
+    		chargeDueDateUpdatedFlag = true;
+    	} else
+    		this.amountOutstanding = this.amountOutstanding.add(dueAmount);
+    	
+    	return chargeDueDateUpdatedFlag;
+    }
+    
     public void updateSchedule(final Calendar calendar, final boolean isHolidayEnabled,
     		final List<Holiday> holidays, final WorkingDays workingDays) {
+    	
+    	//Reset for recalculation
+    	this.amountOutstanding = this.amount;
     	
     	final List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = 
         		savingsAccountChargeScheduleInstallments();
     	
     	LocalDate lastInstallmentDate = savingsAccountChargeScheduleInstallments.get(0).getDueDate();
+    	boolean chargeDueDateUpdatedFlag = false;
     	
     	for(SavingsAccountChargeScheduleInstallment installment : savingsAccountChargeScheduleInstallments) {
     		LocalDate dueDate = installment.getDueDate();
@@ -955,7 +1173,11 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
                 	installment.updateDueDate(nextScheduleDate);
                 }
     		} 
-
+    		
+    		if(!chargeDueDateUpdatedFlag) 
+        		chargeDueDateUpdatedFlag = updateFields(installment.getDueDate(),
+        				this.amount, chargeDueDateUpdatedFlag);
+    		
 			lastInstallmentDate = dueDate;
     	}
     	

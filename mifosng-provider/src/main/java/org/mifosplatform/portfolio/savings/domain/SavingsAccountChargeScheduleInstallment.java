@@ -91,6 +91,43 @@ public class SavingsAccountChargeScheduleInstallment extends AbstractPersistable
         this.waived = false;
 	}
 	
+	public Money undoPayment(final Money transactionAmountRemaining) {
+		final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+		Money undonePaidAmountPortionOfTransaction = Money.zero(currency);
+		final Money paidAmount = getPaidAmount(currency);
+		if (transactionAmountRemaining.isGreaterThanOrEqualTo(paidAmount)) {
+            this.paidAmount = Money.zero(currency).getAmount();
+            undonePaidAmountPortionOfTransaction = paidAmount;
+        } else {
+            this.paidAmount = paidAmount.minus(transactionAmountRemaining).getAmount();
+            undonePaidAmountPortionOfTransaction = transactionAmountRemaining;
+        }
+		
+		this.paidAmount = defaultToNullIfZero(this.paidAmount);
+		this.obligationsMetOnDate = null;
+		
+		return undonePaidAmountPortionOfTransaction;
+	}
+	
+	public Money undoWaive(final Money transactionAmountRemaining) {
+		final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+		Money undoneWaivedAmountPortionOfTransaction = Money.zero(currency);
+		final Money waivedAmount = getWaivedAmount(currency);
+		if (transactionAmountRemaining.isGreaterThanOrEqualTo(waivedAmount)) {
+            this.waivedAmount = Money.zero(currency).getAmount();
+            undoneWaivedAmountPortionOfTransaction = waivedAmount;
+        } else {
+            this.waivedAmount = waivedAmount.minus(transactionAmountRemaining).getAmount();
+            undoneWaivedAmountPortionOfTransaction = transactionAmountRemaining;
+        }
+		
+		this.waived = false;
+		this.waivedAmount = defaultToNullIfZero(this.waivedAmount);
+		this.obligationsMetOnDate = null;
+		
+		return undoneWaivedAmountPortionOfTransaction;
+	}
+	
 	public Money payInstallment(final LocalDate transactionDate, final Money transactionAmountRemaining) {
 
         final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
@@ -112,19 +149,34 @@ public class SavingsAccountChargeScheduleInstallment extends AbstractPersistable
         return paidAmountPortionOfTransaction;
     }
 	
-	private void checkIfInstallmentObligationsAreMet(final LocalDate transactionDate, final MonetaryCurrency currency) {
+	private boolean checkIfInstallmentObligationsAreMet(final LocalDate transactionDate, final MonetaryCurrency currency) {
         boolean obligationsMet = getInstallmentAmountOverdue(currency).isZero();
         if (obligationsMet) {
             this.obligationsMetOnDate = transactionDate.toDate();
         }
+        return obligationsMet;
     }
 	
-	public Money waive(final MonetaryCurrency currency, final Money waiveAmount) {
-		Money amountWaivedToDate = Money.of(currency, this.waivedAmount);
-        this.waivedAmount = amountWaivedToDate.plus(waiveAmount).getAmount();
-        this.waived = true;
+	public Money waive(final LocalDate transactionDate, final Money transactionAmountRemaining) {
+		
+		final MonetaryCurrency currency = transactionAmountRemaining.getCurrency();
+        Money waivedAmountPortionOfTransaction = Money.zero(currency);
 
-        return getInstallmentAmountOverdue(currency);
+        final Money overdueAmount = getInstallmentAmountOverdue(currency);
+        if (transactionAmountRemaining.isGreaterThanOrEqualTo(overdueAmount)) {
+            this.waivedAmount = getWaivedAmount(currency).plus(overdueAmount).getAmount();
+            waivedAmountPortionOfTransaction = waivedAmountPortionOfTransaction.plus(overdueAmount);
+        } else {
+            this.waivedAmount = getWaivedAmount(currency).plus(transactionAmountRemaining).getAmount();
+            waivedAmountPortionOfTransaction = waivedAmountPortionOfTransaction.plus(transactionAmountRemaining);
+        }
+
+        this.waivedAmount = defaultToNullIfZero(this.waivedAmount);
+        
+        if(checkIfInstallmentObligationsAreMet(transactionDate, currency))
+        		this.waived = true;
+        
+        return waivedAmountPortionOfTransaction;
     }
 	
 	public boolean isObligationsMet() {
