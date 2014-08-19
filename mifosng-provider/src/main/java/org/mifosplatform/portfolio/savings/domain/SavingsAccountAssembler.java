@@ -263,13 +263,16 @@ public class SavingsAccountAssembler {
             final AppUser appliedBy) {
 
         AccountType accountType = AccountType.INVALID;
+        LocalDate activationDate = null;
         if (client != null) {
             accountType = AccountType.INDIVIDUAL;
+            activationDate = client.getActivationLocalDate();
             if (client.isNotActive()) { throw new ClientNotActiveException(client.getId()); }
         }
 
         if (group != null) {
             accountType = AccountType.GROUP;
+            activationDate = group.getActivationLocalDate();
             if (group.isNotActive()) {
                 if (group.isCenter()) { throw new CenterNotActiveException(group.getId()); }
                 throw new GroupNotActiveException(group.getId());
@@ -279,10 +282,11 @@ public class SavingsAccountAssembler {
         if (group != null && client != null) {
             if (!group.hasClientAsMember(client)) { throw new ClientNotInGroupException(client.getId(), group.getId()); }
             accountType = AccountType.JLG;
+            activationDate = client.getActivationLocalDate();
         }
 
         final Set<SavingsAccountCharge> charges = this.savingsAccountChargeAssembler.fromSavingsProduct(product,
-        		client.getActivationLocalDate());
+        		activationDate);
 
         final SavingsAccount account = SavingsAccount.createNewApplicationForSubmittal(client, group, product, null, null, null,
                 accountType, appliedonDate, appliedBy, product.nominalAnnualInterestRate(), product.interestCompoundingPeriodType(),

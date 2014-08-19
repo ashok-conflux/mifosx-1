@@ -157,7 +157,7 @@ public class SavingsAccountChargeAssembler {
         return savingsAccountCharges;
     }
 
-    public Set<SavingsAccountCharge> fromSavingsProduct(final SavingsProduct savingsProduct, final LocalDate clientActivationDate) {
+    public Set<SavingsAccountCharge> fromSavingsProduct(final SavingsProduct savingsProduct, final LocalDate activationDate) {
 
         final Set<SavingsAccountCharge> savingsAccountCharges = new HashSet<>();
         Set<Charge> productCharges = savingsProduct.charges();
@@ -176,7 +176,7 @@ public class SavingsAccountChargeAssembler {
             }
             final boolean status = true;
             final boolean isCalendarInherited = false;
-            LocalDate dueDate = clientActivationDate;
+            LocalDate dueDate = activationDate;
             
             final SavingsAccountCharge savingsAccountCharge = SavingsAccountCharge.createNewWithoutSavingsAccount(charge,
                     charge.getAmount(), chargeTime, chargeCalculation, dueDate, status, charge.getFeeOnMonthDay(),

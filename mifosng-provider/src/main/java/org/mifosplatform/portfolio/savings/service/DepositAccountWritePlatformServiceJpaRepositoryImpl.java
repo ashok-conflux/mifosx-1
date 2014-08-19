@@ -994,9 +994,12 @@ public class DepositAccountWritePlatformServiceJpaRepositoryImpl implements Depo
     @Transactional
     @Override
     public CommandProcessingResult waiveCharge(final Long savingsAccountId, final Long savingsAccountChargeId,
-            @SuppressWarnings("unused") final DepositAccountType depositAccountType) {
+            @SuppressWarnings("unused") final DepositAccountType depositAccountType, final JsonCommand command) {
 
         this.context.authenticatedUser();
+        
+        final BigDecimal amountWaived = command.bigDecimalValueOfParameterNamed(amountParamName);
+        final LocalDate transactionDate = command.localDateValueOfParameterNamed(dueAsOfDateParamName);
 
         final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository.findOneWithNotFoundDetection(
                 savingsAccountChargeId, savingsAccountId);
@@ -1009,7 +1012,7 @@ public class DepositAccountWritePlatformServiceJpaRepositoryImpl implements Depo
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
         updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
 
-        account.waiveCharge(savingsAccountChargeId);
+        account.waiveCharge(savingsAccountChargeId, amountWaived, transactionDate);
         boolean isInterestTransfer = false;
         final MathContext mc = MathContext.DECIMAL64;
         if (account.isBeforeLastPostingPeriod(savingsAccountCharge.getDueLocalDate())) {

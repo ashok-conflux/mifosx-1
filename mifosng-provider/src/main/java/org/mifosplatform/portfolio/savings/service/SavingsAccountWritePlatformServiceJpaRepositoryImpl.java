@@ -867,12 +867,16 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
 
     @Transactional
     @Override
-    public CommandProcessingResult waiveCharge(final Long savingsAccountId, final Long savingsAccountChargeId) {
+    public CommandProcessingResult waiveCharge(final Long savingsAccountId, final Long savingsAccountChargeId,
+    			final JsonCommand command) {
 
         this.context.authenticatedUser();
 
         final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository.findOneWithNotFoundDetection(
                 savingsAccountChargeId, savingsAccountId);
+        
+        final BigDecimal amountWaived = command.bigDecimalValueOfParameterNamed(amountParamName);
+        final LocalDate transactionDate = command.localDateValueOfParameterNamed(dueAsOfDateParamName);
 
         // Get Savings account from savings charge
         final SavingsAccount account = savingsAccountCharge.savingsAccount();
@@ -882,7 +886,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
         updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
 
-        account.waiveCharge(savingsAccountChargeId);
+        account.waiveCharge(savingsAccountChargeId, amountWaived, transactionDate);
         boolean isInterestTransfer = false;
         final MathContext mc = MathContext.DECIMAL64;
         if (account.isBeforeLastPostingPeriod(savingsAccountCharge.getDueLocalDate())) {
@@ -974,7 +978,6 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
 
     }
 
-    @Transactional
     @Override
     public void applyChargeDue(final Long savingsAccountChargeId, final Long accountId) {
         // always use current date as transaction date for batch job
