@@ -276,27 +276,33 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     	
         Page<SavingsAccountAnnualFeeData> chargesDueData = this.savingsAccountChargeReadPlatformService
                 .retrieveChargesWithDue(0);
+        int totalFilteredRecords = chargesDueData.getTotalFilteredRecords();
         final StringBuilder errorMsg = new StringBuilder();
         
+        logger.info("Applying Due Charges for " + totalFilteredRecords + " charges : In Progress...");
         applyDueChargesForSavingsPage(chargesDueData.getPageItems(), errorMsg);
+        logger.info("Processed batch with " + chargesDueData.getSize() + " charges.");
         
         final int maxPageSize = 500;
-        int totalFilteredRecords = chargesDueData.getTotalFilteredRecords();
+        
         int offsetCounter = maxPageSize;
         int processedRecords = maxPageSize;
         
         while(totalFilteredRecords > processedRecords) {
+        	
         	chargesDueData = this.savingsAccountChargeReadPlatformService
                     .retrieveChargesWithDue(offsetCounter);
         	applyDueChargesForSavingsPage(chargesDueData.getPageItems(), errorMsg);
         	offsetCounter += 500;
         	processedRecords += 500;
+        	logger.info("Processed batch with " + chargesDueData.getSize() + " charges.");
         }
 
         /*
          * throw exception if any charge payment fails.
          */
         if (errorMsg.length() > 0) { throw new JobExecutionException(errorMsg.toString()); }
+        logger.info(ThreadLocalContextUtil.getTenant().getName() + ": Finished applying Due Charges.");
     }
     
     private void updateDueDateAndOutstanding() {
@@ -307,6 +313,8 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     		if(charge.isRecurringFee())
     			charge.updateToNextDueDate();
     	}
+    	
+    	logger.info("Due Dates and Outstanding Amount updated for " + charges.size() + "charges.");
     }
     
     private StringBuilder applyDueChargesForSavingsPage(final List<SavingsAccountAnnualFeeData> chargesDueData,
@@ -379,10 +387,12 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     	
         Page<FutureChargeScheduleInstallment> futureCalendars = this.paginationHelper.fetchPage(jdbcTemplate,
         		sqlCountRows, sqlBuilder.toString(), new Object[] {}, rm);
-        
-        insertFutureChargeScheduleInstallments(futureCalendars, isHolidayEnabled, jdbcTemplate);
-        
         int totalFilteredRecords = futureCalendars.getTotalFilteredRecords();
+        
+        logger.info("Updating Charge Installment Dates for " + totalFilteredRecords + " calendars : In Progress...");
+        insertFutureChargeScheduleInstallments(futureCalendars, isHolidayEnabled, jdbcTemplate);
+        logger.info("Processed batch with " + futureCalendars.getSize() + " calendars.");
+        
         int offsetCounter = maxPageSize;
         int processedRecords = maxPageSize;
         
@@ -391,9 +401,12 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
         	futureCalendars = this.paginationHelper.fetchPage(jdbcTemplate,
             		sqlCountRows, sqlBuilder.toString().replaceFirst("offset.*$", "offset " + offsetCounter), new Object[] {}, rm);
         	insertFutureChargeScheduleInstallments(futureCalendars, isHolidayEnabled, jdbcTemplate);
+        	logger.info("Processed batch with " + futureCalendars.getSize() + " calendars.");
         	offsetCounter += 500;
         	processedRecords += 500;
         }
+        
+        logger.info(ThreadLocalContextUtil.getTenant().getName() + ": Finished updating Charge Installment dates.");
     }
     
     @Transactional

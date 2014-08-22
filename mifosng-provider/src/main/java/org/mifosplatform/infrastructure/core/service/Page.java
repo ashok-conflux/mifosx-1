@@ -24,4 +24,8 @@ public class Page<E> {
     public List<E> getPageItems() {
         return this.pageItems;
     }
+    
+    public int getSize() {
+    	return this.pageItems.size();
+    }
 }
