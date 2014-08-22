@@ -1140,7 +1140,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     	
     	LocalDate today = DateUtils.getLocalDateOfTenant();
         
-    	if(dueDate.isAfter(today)) {
+    	if(!dueDate.isBefore(today)) {
     		this.dueDate = dueDate.toDate();
     		chargeDueDateUpdatedFlag = true;
     	} else
