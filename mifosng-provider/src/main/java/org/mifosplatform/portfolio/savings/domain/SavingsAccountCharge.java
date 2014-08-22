@@ -11,6 +11,7 @@ import static org.mifosplatform.portfolio.savings.SavingsApiConstants.dueAsOfDat
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.feeIntervalParamName;
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.feeOnMonthDayParamName;
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.localeParamName;
+import static org.mifosplatform.portfolio.savings.SavingsApiConstants.calendarInheritedParamName;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -145,10 +146,10 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         final LocalDate dueDate = command.localDateValueOfParameterNamed(dueAsOfDateParamName);
         MonthDay feeOnMonthDay = command.extractMonthDayNamed(feeOnMonthDayParamName);
         Integer feeInterval = command.integerValueOfParameterNamed(feeIntervalParamName);
+        final Boolean isCalendarInherited = command.booleanObjectValueOfParameterNamed(calendarInheritedParamName);
         final ChargeTimeType chargeTime = null;
         final ChargeCalculationType chargeCalculation = null;
         final boolean status = true;
-        final boolean isCalendarInherited = false;
 
         // If these values is not sent as parameter, then derive from Charge
         // definition
