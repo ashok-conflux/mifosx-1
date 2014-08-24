@@ -481,7 +481,8 @@ public class CollectionSheetReadPlatformServiceImpl implements CollectionSheetRe
                     .append("LEFT JOIN m_deposit_account_recurring_detail dard ON sa.id = dard.savings_account_id AND dard.is_mandatory = true AND dard.is_calendar_inherited = true ")
                     .append("LEFT JOIN m_mandatory_savings_schedule mss ON mss.savings_account_id=sa.id AND mss.duedate <= :dueDate AND completed_derived <> 1 ")
                     .append("LEFT JOIN m_currency rc on rc.`code` = sa.currency_code ")
-                    .append("LEFT JOIN m_savings_account_charge as sac ON sac.savings_account_id = sa.id AND sac.charge_due_date <= :dueDate AND sac.is_active = 1 ");
+                    .append("LEFT JOIN m_savings_account_charge as sac ON sac.savings_account_id = sa.id AND sac.charge_due_date <= :dueDate AND sac.is_active = 1 ")
+                    .append("LEFT JOIN ct_savings_account_charge_schedule csacs ON csacs.savings_account_charge_id = sac.id AND csacs.due_date <= :dueDate AND csacs.obligations_met_on_date is NULL ");
 
             if (isCenterCollection) {
                 sql.append("WHERE gp.parent_id = :centerId ");
