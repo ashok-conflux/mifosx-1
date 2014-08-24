@@ -83,6 +83,8 @@ import org.mifosplatform.portfolio.savings.exception.SavingsAccountClosingNotAll
 import org.mifosplatform.portfolio.savings.exception.SavingsAccountTransactionNotFoundException;
 import org.mifosplatform.portfolio.savings.exception.TransactionUpdateNotAllowedException;
 import org.mifosplatform.useradministration.domain.AppUser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -92,6 +94,8 @@ import org.springframework.util.CollectionUtils;
 
 @Service
 public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements SavingsAccountWritePlatformService {
+	
+	private final static Logger logger = LoggerFactory.getLogger(SavingsAccountWritePlatformServiceJpaRepositoryImpl.class);
 
     private final PlatformSecurityContext context;
     private final SavingsAccountRepository savingAccountRepository;
@@ -430,13 +434,16 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     	
         Page<SavingsAccount> savingsAccounts = this.savingAccountRepository.findSavingAccountByStatus(SavingsAccountStatusType.ACTIVE
                 .getValue(), new PageRequest(pageNumber, maxPageSize));
+        logger.info("Posting interest for " + savingsAccounts.getTotalElements() + " Savings Accounts : In Progress...");
         hasErrorOccurred = postInterestInBatch(savingsAccounts);
+        logger.info("Processed batch with " + savingsAccounts.getNumberOfElements() + " accounts.");
         
         while(savingsAccounts.hasNextPage()) {
         	pageNumber++;
         	savingsAccounts = this.savingAccountRepository.findSavingAccountByStatus(SavingsAccountStatusType.ACTIVE
                     .getValue(), new PageRequest(pageNumber, maxPageSize));
         	tempHasErrorOccurred = postInterestInBatch(savingsAccounts);
+        	logger.info("Processed batch with " + savingsAccounts.getNumberOfElements() + " accounts.");
         	
         	if(tempHasErrorOccurred == Boolean.TRUE)
         		hasErrorOccurred = tempHasErrorOccurred;
