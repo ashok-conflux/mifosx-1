@@ -467,7 +467,7 @@ public class CollectionSheetReadPlatformServiceImpl implements CollectionSheetRe
                     .append("rc.`name` as currencyName, ")
                     .append("rc.display_symbol as currencyDisplaySymbol, ")
                     .append("rc.internationalized_name_code as currencyNameCode, ")
-                    .append("sum( ifnull(sac.amount_outstanding_derived,0) + ")  					// Fees dues 
+                    .append("sum( ifnull(csacs.due_amount,0) - ifnull(csacs.paid_amount,0) + ")  					// Fees dues 
                     .append("     ifnull(mss.deposit_amount,0) - ")              					// Mandatory savings dues
                     .append("     ifnull(mss.deposit_amount_completed_derived,0)) as dueAmount ")	// Mandatory savings paid
                     .append("FROM m_group gp ")
