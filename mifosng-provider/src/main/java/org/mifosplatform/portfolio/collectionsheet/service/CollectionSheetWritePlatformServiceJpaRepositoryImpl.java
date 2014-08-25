@@ -131,7 +131,7 @@ public class CollectionSheetWritePlatformServiceJpaRepositoryImpl implements Col
         		if(savingsAccountTransactionDTO.getTransactionAmount().compareTo(BigDecimal.ZERO)> 0){
 		            	// TODO instead of repository use read platform service
 		            	SavingsAccount savingsAccount = savingsRepository.findById(savingsAccountTransactionDTO.getSavingsAccountId());
-		            	if(savingsAccount.isMandatoryDeposit()){
+		            	if(savingsAccount.isRDAccount() && savingsAccount.isMandatoryDeposit()){
 		                    this.accountWritePlatformService.mandatorySavingsAccountDeposit(savingsAccountTransactionDTO);
 		                    changes.put("savingsAccountId", savingsAccountTransactionDTO.getSavingsAccountId());
 		                    changes.put("transactionAmount", savingsAccountTransactionDTO.getTransactionAmount());
