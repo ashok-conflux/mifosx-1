@@ -10,6 +10,8 @@ import java.util.List;
 
 import org.mifosplatform.portfolio.charge.exception.SavingsAccountChargeNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -42,6 +44,10 @@ public class SavingsAccountChargeRepositoryWrapper {
 
     public List<SavingsAccountCharge> findPendingCharges(final Date transactionDate) {
         return this.repository.findPendingCharges(transactionDate);
+    }
+    
+    public Page<SavingsAccountCharge> findChargesRequiringUpdate(final Pageable pageable) {
+        return this.repository.findChargesRequiringUpdate(pageable);
     }
 
     public void save(final SavingsAccountCharge savingsAccountCharge) {

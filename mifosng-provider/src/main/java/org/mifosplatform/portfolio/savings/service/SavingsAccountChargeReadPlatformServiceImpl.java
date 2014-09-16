@@ -84,7 +84,7 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
         }
 
         @Override
-        public SavingsAccountChargeData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+        public SavingsAccountChargeData mapRow(final ResultSet rs, final int rowNum) throws SQLException {
 
             final Long id = rs.getLong("id");
             final Long chargeId = rs.getLong("chargeId");
@@ -211,14 +211,15 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
         }
 
         @Override
-        public SavingsAccountAnnualFeeData mapRow(final ResultSet rs, @SuppressWarnings("unused") final int rowNum) throws SQLException {
+        public SavingsAccountAnnualFeeData mapRow(final ResultSet rs, final int rowNum) throws SQLException {
 
             final Long id = rs.getLong("id");
             final Long accountId = rs.getLong("accountId");
             final String accountNo = rs.getString("accountNo");
             final LocalDate annualFeeNextDueDate = JdbcSupport.getLocalDate(rs, "dueDate");
 
-            return SavingsAccountAnnualFeeData.instance(id, accountId, accountNo, annualFeeNextDueDate);
+            return SavingsAccountAnnualFeeData.instance(id, accountId, accountNo,
+            		annualFeeNextDueDate);
         }
     }
 
@@ -239,7 +240,8 @@ public class SavingsAccountChargeReadPlatformServiceImpl implements SavingsAccou
     	
     	sqlBuilder.append("select SQL_CALC_FOUND_ROWS ");
     	sqlBuilder.append(this.chargeDueMapper.schema());
-        sqlBuilder.append(" where sac.charge_due_date is not null and sac.charge_due_date <= NOW() and sac.waived = 0 and sac.is_paid_derived=0 and sac.is_active=1 and sa.status_enum = ");
+        sqlBuilder.append(" where sac.charge_due_date is not null and (sac.charge_due_date <= NOW() or sac.amount_outstanding_derived > sac.amount) ");
+        sqlBuilder.append(" and sac.waived = 0 and sac.is_paid_derived=0 and sac.is_active=1 and sa.status_enum = ");
         sqlBuilder.append(SavingsAccountStatusType.ACTIVE.getValue());
         sqlBuilder.append(" order by sac.charge_due_date ");
         sqlBuilder.append(" limit " + maxPageSize);

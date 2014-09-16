@@ -986,16 +986,24 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     }
 
     @Override
-    public void applyChargeDue(final Long savingsAccountChargeId, final Long accountId) {
+    public void applyChargeDue(final Long savingsAccountId, final Long savingsAccountChargeId) {
         // always use current date as transaction date for batch job
         final LocalDate transactionDate = DateUtils.getLocalDateOfTenant();
         final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository.findOneWithNotFoundDetection(
-                savingsAccountChargeId, accountId);
+        		savingsAccountChargeId, savingsAccountId);
 
         final DateTimeFormatter fmt = DateTimeFormat.forPattern("dd MM yyyy");
+        
+        final BigDecimal amountOutstanding = savingsAccountCharge.amoutOutstanding();   
+        final BigDecimal dueAmount = savingsAccountCharge.amount();
+        BigDecimal dueAmountToBePaid = amountOutstanding;
+        final boolean isOutstandingMoreThanSingleInstallment = amountOutstanding.compareTo(dueAmount)  > 0;
+        if(isOutstandingMoreThanSingleInstallment)
+        	dueAmountToBePaid = amountOutstanding.subtract(dueAmount);
 
-        while (transactionDate.isAfter(savingsAccountCharge.getDueLocalDate()) && savingsAccountCharge.isNotFullyPaid()) {
-            payCharge(savingsAccountCharge, transactionDate, savingsAccountCharge.amoutOutstanding(), fmt);
+        if ((transactionDate.isAfter(savingsAccountCharge.getDueLocalDate()) || 
+        		isOutstandingMoreThanSingleInstallment) && savingsAccountCharge.isNotFullyPaid()) {
+            payCharge(savingsAccountCharge, transactionDate, dueAmountToBePaid, fmt);
         }
     }
 
@@ -1109,6 +1117,40 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     private SavingsAccountTransaction getLastChargePayment(final List<SavingsAccountTransaction> chargePayments) {
         if (!CollectionUtils.isEmpty(chargePayments)) { return chargePayments.get(chargePayments.size() - 1); }
         return null;
+    }
+    
+    @Override
+    public void updateDueDateAndOutstanding() {
+
+    	final int maxPageSize = 500;
+    	int pageNumber = 0;
+    	
+    	Page<SavingsAccountCharge> charges = this.savingsAccountChargeRepository.
+    			findChargesRequiringUpdate(new PageRequest(pageNumber, maxPageSize));
+    	
+    	logger.info("Updating for " + charges.getTotalElements() + " Recurring Charges : In Progress...");
+        updateRecurringChargesInBatch(charges);
+        logger.info("Processed batch with " + charges.getNumberOfElements() + " charges.");
+        
+        while(charges.hasNextPage()) {
+        	pageNumber++;
+        	charges = this.savingsAccountChargeRepository.
+        			findChargesRequiringUpdate(new PageRequest(pageNumber, maxPageSize));
+        	updateRecurringChargesInBatch(charges);
+        	logger.info("Processed batch with " + charges.getNumberOfElements() + " charges.");
+        }
+        
+    	
+    }
+    
+    @Transactional
+    private void updateRecurringChargesInBatch(final Page<SavingsAccountCharge> charges) {
+    	final LocalDate today = DateUtils.getLocalDateOfTenant();
+    	for(SavingsAccountCharge charge : charges) {
+    		if(charge.isRecurringFee())
+    			while(charge.getDueLocalDate().isBefore(today))
+    				charge.updateToNextDueDate();
+    	}
     }
 
 }

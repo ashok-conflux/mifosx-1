@@ -32,8 +32,6 @@ import org.mifosplatform.portfolio.calendar.service.CalendarReadPlatformService;
 import org.mifosplatform.portfolio.savings.DepositAccountType;
 import org.mifosplatform.portfolio.savings.data.DepositAccountData;
 import org.mifosplatform.portfolio.savings.data.SavingsAccountAnnualFeeData;
-import org.mifosplatform.portfolio.savings.domain.SavingsAccountCharge;
-import org.mifosplatform.portfolio.savings.domain.SavingsAccountChargeRepository;
 import org.mifosplatform.portfolio.savings.service.DepositAccountReadPlatformService;
 import org.mifosplatform.portfolio.savings.service.DepositAccountWritePlatformService;
 import org.mifosplatform.portfolio.savings.service.SavingsAccountChargeReadPlatformService;
@@ -55,7 +53,6 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     private final RoutingDataSourceServiceFactory dataSourceServiceFactory;
     private final SavingsAccountWritePlatformService savingsAccountWritePlatformService;
     private final SavingsAccountChargeReadPlatformService savingsAccountChargeReadPlatformService;
-    private final SavingsAccountChargeRepository savingsAccountChargeRepository;
     private final DepositAccountReadPlatformService depositAccountReadPlatformService;
     private final DepositAccountWritePlatformService depositAccountWritePlatformService;
     private final CalendarReadPlatformService calendarReadPlatformService;
@@ -67,7 +64,6 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     public ScheduledJobRunnerServiceImpl(final RoutingDataSourceServiceFactory dataSourceServiceFactory,
             final SavingsAccountWritePlatformService savingsAccountWritePlatformService,
             final SavingsAccountChargeReadPlatformService savingsAccountChargeReadPlatformService,
-            final SavingsAccountChargeRepository savingsAccountChargeRepository,
             final DepositAccountReadPlatformService depositAccountReadPlatformService,
             final DepositAccountWritePlatformService depositAccountWritePlatformService,
             final ConfigurationDomainService configurationDomainService,
@@ -76,7 +72,6 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
         this.dataSourceServiceFactory = dataSourceServiceFactory;
         this.savingsAccountWritePlatformService = savingsAccountWritePlatformService;
         this.savingsAccountChargeReadPlatformService = savingsAccountChargeReadPlatformService;
-        this.savingsAccountChargeRepository = savingsAccountChargeRepository;
         this.depositAccountReadPlatformService = depositAccountReadPlatformService;
         this.depositAccountWritePlatformService = depositAccountWritePlatformService;
         this.calendarReadPlatformService = calendarReadPlatformService;
@@ -272,7 +267,7 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
     @CronTarget(jobName = JobName.PAY_DUE_SAVINGS_CHARGES)
     public void applyDueChargesForSavings() throws JobExecutionException {
     	
-    	updateDueDateAndOutstanding();
+    	this.savingsAccountWritePlatformService.updateDueDateAndOutstanding();
     	
         Page<SavingsAccountAnnualFeeData> chargesDueData = this.savingsAccountChargeReadPlatformService
                 .retrieveChargesWithDue(0);
@@ -303,18 +298,6 @@ public class ScheduledJobRunnerServiceImpl implements ScheduledJobRunnerService 
          */
         if (errorMsg.length() > 0) { throw new JobExecutionException(errorMsg.toString()); }
         logger.info(ThreadLocalContextUtil.getTenant().getName() + ": Finished applying Due Charges.");
-    }
-    
-    private void updateDueDateAndOutstanding() {
-    	final List<SavingsAccountCharge> charges = this.savingsAccountChargeRepository.
-    			findChargesRequiringUpdate();
-    	
-    	for(SavingsAccountCharge charge : charges) {
-    		if(charge.isRecurringFee())
-    			charge.updateToNextDueDate();
-    	}
-    	
-    	logger.info("Due Dates and Outstanding Amount updated for " + charges.size() + "charges.");
     }
     
     private StringBuilder applyDueChargesForSavingsPage(final List<SavingsAccountAnnualFeeData> chargesDueData,
