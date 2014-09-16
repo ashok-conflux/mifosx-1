@@ -19,7 +19,8 @@ public class SavingsAccountAnnualFeeData {
         return new SavingsAccountAnnualFeeData(id, accountId, accountNo, nextAnnualFeeDueDate);
     }
 
-    private SavingsAccountAnnualFeeData(final Long id, final Long accountId, final String accountNo, final LocalDate nextAnnualFeeDueDate) {
+    private SavingsAccountAnnualFeeData(final Long id, final Long accountId,
+    		final String accountNo, final LocalDate nextAnnualFeeDueDate) {
         this.id = id;
         this.accountId = accountId;
         this.accountNo = accountNo;

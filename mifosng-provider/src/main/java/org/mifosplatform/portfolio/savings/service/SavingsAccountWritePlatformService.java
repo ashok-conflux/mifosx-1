@@ -60,7 +60,7 @@ public interface SavingsAccountWritePlatformService {
     
     CommandProcessingResult inactivateCharge(Long savingsAccountId, Long savingsAccountChargeId);
 
-    void applyChargeDue(final Long savingsAccountChargeId, final Long accountId);
+    void applyChargeDue(Long savingsAccountId, Long savingsAccountChargeId);
 
     void processPostActiveActions(SavingsAccount account, DateTimeFormatter fmt, Set<Long> existingTransactionIds,
             Set<Long> existingReversedTransactionIds);
@@ -70,5 +70,7 @@ public interface SavingsAccountWritePlatformService {
 	
 	void withdraw(SavingsAccountTransactionDTO savingsAccountTransactionDTO,
 			DateTimeFormatter fmt);
+	
+	void updateDueDateAndOutstanding();
 	
 }
