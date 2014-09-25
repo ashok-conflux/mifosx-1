@@ -65,4 +65,8 @@ public class SavingsAccountChargeRepositoryWrapper {
     public void delete(final SavingsAccountCharge savingsAccountCharge) {
         this.repository.delete(savingsAccountCharge);
     }
+    
+    public void flush() {
+        this.repository.flush();
+    }
 }

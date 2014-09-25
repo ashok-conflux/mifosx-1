@@ -941,7 +941,7 @@ public class SavingsAccount extends AbstractPersistable<Long> {
         return transactionDate.isAfter(DateUtils.getLocalDateOfTenant());
     }
 
-    protected BigDecimal getAccountBalance() {
+    public BigDecimal getAccountBalance() {
         return this.summary.getAccountBalance(this.currency).getAmount();
     }
 

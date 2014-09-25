@@ -223,7 +223,7 @@ public class SavingsAccountChargeAssembler {
         
         final Set<SavingsAccountCharge> savingsAccountCharges = account.charges();
         for(final SavingsAccountCharge savingsAccountCharge : savingsAccountCharges) {
-        	if(savingsAccountCharge.isRecurringFee() && savingsAccountCharge.savingsAccountChargeScheduleInstallments().isEmpty())
+        	if(savingsAccountCharge.isRecurringFee() && savingsAccountCharge.getSavingsAccountChargeScheduleInstallments().isEmpty())
         		generateScheduleForCharge(account, savingsAccountCharge, isModify, isHolidayEnabled, holidays, workingDays);
         	
         }

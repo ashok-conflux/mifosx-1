@@ -6,12 +6,12 @@
 package org.mifosplatform.portfolio.savings.domain;
 
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.amountParamName;
+import static org.mifosplatform.portfolio.savings.SavingsApiConstants.calendarInheritedParamName;
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.dateFormatParamName;
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.dueAsOfDateParamName;
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.feeIntervalParamName;
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.feeOnMonthDayParamName;
 import static org.mifosplatform.portfolio.savings.SavingsApiConstants.localeParamName;
-import static org.mifosplatform.portfolio.savings.SavingsApiConstants.calendarInheritedParamName;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -37,6 +37,8 @@ import javax.persistence.TemporalType;
 
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.hibernate.annotations.LazyCollection;
+import org.hibernate.annotations.LazyCollectionOption;
 import org.joda.time.LocalDate;
 import org.joda.time.MonthDay;
 import org.joda.time.Months;
@@ -58,6 +60,7 @@ import org.mifosplatform.portfolio.charge.domain.ChargeCalculationType;
 import org.mifosplatform.portfolio.charge.domain.ChargeTimeType;
 import org.mifosplatform.portfolio.charge.exception.SavingsAccountChargeWithoutMandatoryFieldException;
 import org.springframework.data.jpa.domain.AbstractPersistable;
+import org.springframework.transaction.annotation.Transactional;
 
 @Entity
 @Table(name = "m_savings_account_charge")
@@ -74,7 +77,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     @OrderBy(value = "installmentNumber, dueDate")
     @OneToMany(mappedBy = "savingsAccountCharge", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments;
-
+    
     @Column(name = "charge_time_enum", nullable = false)
     private Integer chargeTime;
     
@@ -244,7 +247,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         if (this.isWithdrawalFee()) {
             this.amountOutstanding = BigDecimal.ZERO;
         }
-
+        
         this.paid = false;
         this.status = status;
         
@@ -352,7 +355,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         if(isRecurringFee()) {
         	
         	List<SavingsAccountChargeScheduleInstallment> installments = 
-        			savingsAccountChargeScheduleInstallments();
+        			getSavingsAccountChargeScheduleInstallments();
         			
         	for(SavingsAccountChargeScheduleInstallment installment : installments) {
         		if (installment.isNotFullyPaidOff() && transactionAmountRemaining.isGreaterThanZero()) {
@@ -409,7 +412,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         
         if(isRecurringFee()) {
         	List<SavingsAccountChargeScheduleInstallment> installments = 
-        			savingsAccountChargeScheduleInstallments();
+        			getSavingsAccountChargeScheduleInstallments();
         	
         	for(SavingsAccountChargeScheduleInstallment installment : installments) {
         		if (installment.isNotFullyPaidOff() && amountWaived.isGreaterThanZero()) {
@@ -665,7 +668,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
             }
             
             final List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = 
-            		savingsAccountChargeScheduleInstallments();
+            		getSavingsAccountChargeScheduleInstallments();
             for(SavingsAccountChargeScheduleInstallment installment : savingsAccountChargeScheduleInstallments)
             	installment.updateAmount(newValue);
         }
@@ -740,7 +743,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     	
     	BigDecimal totalOutstandingSchedule = BigDecimal.ZERO;
     	ListIterator<SavingsAccountChargeScheduleInstallment> iter = 
-    			savingsAccountChargeScheduleInstallments().listIterator();
+    			getSavingsAccountChargeScheduleInstallments().listIterator();
     	SavingsAccountChargeScheduleInstallment installment;
     	
     	do{
@@ -924,8 +927,10 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         final SavingsAccountCharge rhs = (SavingsAccountCharge) obj;
         return new EqualsBuilder().appendSuper(super.equals(obj)) //
                 .append(getId(), rhs.getId()) //
-                .append(this.charge.getId(), rhs.charge.getId()) //
+                .append(this.chargeTime, rhs.chargeTime)
                 .append(this.amount, rhs.amount) //
+                .append(this.amountPaid, rhs.amountPaid) //
+                .append(this.amountOutstanding, rhs.amountOutstanding) //
                 .append(getDueLocalDate(), rhs.getDueLocalDate()) //
                 .isEquals();
     }
@@ -933,10 +938,13 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     @Override
     public int hashCode() {
         return new HashCodeBuilder(3, 5) //
-                .append(getId()) //
-                .append(this.charge.getId()) //
-                .append(this.amount).append(getDueLocalDate()) //
-                .toHashCode();
+        .append(getId()) //
+        .append(this.amount) //
+        .append(this.amountPaid) //
+        .append(this.amountOutstanding) //
+        .append(this.chargeTime) //
+        .append(getDueLocalDate()) //
+        .toHashCode();
     }
 
     public BigDecimal updateWithdralFeeAmount(final BigDecimal transactionAmount) {
@@ -973,25 +981,29 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
 
     }
     
-    //From installments
-    public void updateToNextDueDate() {
-    	List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments =
-    			savingsAccountChargeScheduleInstallments();
-    	ListIterator<SavingsAccountChargeScheduleInstallment> iter = 
-    			savingsAccountChargeScheduleInstallments.listIterator();
-    	
-    	while(iter.hasNext()) {
-    		SavingsAccountChargeScheduleInstallment installment = iter.next();
-    		if(installment.getDueDate().isEqual(getDueLocalDate())) {
-    			installment = iter.next();
-    			this.dueDate = installment.getDueDate().toDate();
-    			this.amountOutstanding = this.amountOutstanding.add(
-    					installment.getInstallmentAmountOverdue(
-    					this.savingsAccount.getCurrency()).getAmount());
-    			break;
-    		}
-    	}
-    }
+	// From installments
+	@Transactional
+	public LocalDate updateToNextDueDate() {
+
+		List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = getSavingsAccountChargeScheduleInstallments();
+		ListIterator<SavingsAccountChargeScheduleInstallment> iter = savingsAccountChargeScheduleInstallments
+				.listIterator(savingsAccountChargeScheduleInstallments.size());
+		while (iter.hasPrevious()) {
+			SavingsAccountChargeScheduleInstallment installment = iter
+					.previous();
+			if (installment.getDueDate().isEqual(getDueLocalDate())) {
+				if (iter.hasNext()) {
+					iter.next();
+					installment = iter.next();
+					this.dueDate = installment.getDueDate().toDate();
+					this.amountOutstanding = this.amountOutstanding.add(amount);
+				}
+				break;
+			}
+		}
+
+		return getDueLocalDate();
+	}
 
     private LocalDate calculateNextDueDate(final LocalDate date) {
         LocalDate nextDueLocalDate = null;
@@ -1100,7 +1112,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
         recurringEvery = recurringEvery == -1 ? 1 : recurringEvery;
         
         final List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = 
-        		savingsAccountChargeScheduleInstallments();
+        		getSavingsAccountChargeScheduleInstallments();
         savingsAccountChargeScheduleInstallments.clear();
         LocalDate installmentDate = null;
         if (isCalendarInherited()) {
@@ -1157,7 +1169,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     	this.amountOutstanding = this.amount;
     	
     	final List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments = 
-        		savingsAccountChargeScheduleInstallments();
+    			getSavingsAccountChargeScheduleInstallments();
     	
     	LocalDate lastInstallmentDate = savingsAccountChargeScheduleInstallments.get(0).getDueDate();
     	boolean chargeDueDateUpdatedFlag = false;
@@ -1184,7 +1196,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     	
     }
     
-    public List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments() {
+    public List<SavingsAccountChargeScheduleInstallment> getSavingsAccountChargeScheduleInstallments() {
         if (this.savingsAccountChargeScheduleInstallments == null) {
             this.savingsAccountChargeScheduleInstallments = new ArrayList<>();
         }
