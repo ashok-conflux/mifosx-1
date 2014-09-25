@@ -986,7 +986,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     }
 
     @Override
-    public void applyChargeDue(final Long savingsAccountId, final Long savingsAccountChargeId) {
+    public void applyChargeDue(final Long savingsAccountChargeId, final Long savingsAccountId) {
         // always use current date as transaction date for batch job
         final LocalDate transactionDate = DateUtils.getLocalDateOfTenant();
         final SavingsAccountCharge savingsAccountCharge = this.savingsAccountChargeRepository.findOneWithNotFoundDetection(
@@ -1008,15 +1008,18 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     }
 
     @Transactional
-    private void payCharge(final SavingsAccountCharge savingsAccountCharge, final LocalDate transactionDate, final BigDecimal amountPaid,
-            final DateTimeFormatter formatter) {
+    private void payCharge(final SavingsAccountCharge savingsAccountCharge, final LocalDate transactionDate,
+    		BigDecimal amountToBePaid, final DateTimeFormatter formatter) {
         // Get Savings account from savings charge
         final SavingsAccount account = savingsAccountCharge.savingsAccount();
+        //If outstanding is more than account balance, pay whatever is left in account
+        if(account.getAccountBalance().compareTo(amountToBePaid) < 0)
+        	amountToBePaid = account.getAccountBalance();
         this.savingAccountAssembler.assignSavingAccountHelpers(account);
         final Set<Long> existingTransactionIds = new HashSet<>();
         final Set<Long> existingReversedTransactionIds = new HashSet<>();
         updateExistingTransactionsDetails(account, existingTransactionIds, existingReversedTransactionIds);
-        account.payCharge(savingsAccountCharge, amountPaid, transactionDate, formatter);
+        account.payCharge(savingsAccountCharge, amountToBePaid, transactionDate, formatter);
         boolean isInterestTransfer = false;
         final MathContext mc = MathContext.DECIMAL64;
         if (account.isBeforeLastPostingPeriod(transactionDate)) {
@@ -1026,9 +1029,11 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
             final LocalDate today = DateUtils.getLocalDateOfTenant();
             account.calculateInterestUsing(mc, today, isInterestTransfer);
         }
-
-        account.validateAccountBalanceDoesNotBecomeNegative("." + SavingsAccountTransactionType.PAY_CHARGE.getCode());
-
+        try {
+        	account.validateAccountBalanceDoesNotBecomeNegative("." + SavingsAccountTransactionType.PAY_CHARGE.getCode());
+        } catch (PlatformApiDataValidationException accountBalanceNegativeException) {
+        	logger.warn(accountBalanceNegativeException.getErrors().get(0).getDefaultUserMessage());
+        }
         this.savingAccountRepository.save(account);
 
         postJournalEntries(account, existingTransactionIds, existingReversedTransactionIds);
@@ -1143,14 +1148,24 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     	
     }
     
-    @Transactional
     private void updateRecurringChargesInBatch(final Page<SavingsAccountCharge> charges) {
     	final LocalDate today = DateUtils.getLocalDateOfTenant();
     	for(SavingsAccountCharge charge : charges) {
-    		if(charge.isRecurringFee())
-    			while(charge.getDueLocalDate().isBefore(today))
-    				charge.updateToNextDueDate();
+    		updateRecurringCharge(charge, today);
     	}
+    	this.savingsAccountChargeRepository.save(charges);
+        this.savingsAccountChargeRepository.flush();
+    }
+    
+    @Transactional
+    private void updateRecurringCharge(final SavingsAccountCharge charge,
+    		final LocalDate today) {
+    	if(charge.isRecurringFee()) {
+			while(charge.getDueLocalDate().isBefore(today)) {
+				charge.updateToNextDueDate();
+			}
+			
+		}
     }
 
 }
