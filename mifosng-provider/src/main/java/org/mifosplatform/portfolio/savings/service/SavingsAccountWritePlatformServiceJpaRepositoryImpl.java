@@ -1150,6 +1150,7 @@ public class SavingsAccountWritePlatformServiceJpaRepositoryImpl implements Savi
     
     private void updateRecurringChargesInBatch(final Page<SavingsAccountCharge> charges) {
     	final LocalDate today = DateUtils.getLocalDateOfTenant();
+    	logger.info("Processing batch with " + charges.getNumberOfElements() + " charges.");
     	for(SavingsAccountCharge charge : charges) {
     		updateRecurringCharge(charge, today);
     	}

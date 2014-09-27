@@ -37,8 +37,6 @@ import javax.persistence.TemporalType;
 
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
-import org.hibernate.annotations.LazyCollection;
-import org.hibernate.annotations.LazyCollectionOption;
 import org.joda.time.LocalDate;
 import org.joda.time.MonthDay;
 import org.joda.time.Months;
@@ -65,7 +63,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Entity
 @Table(name = "m_savings_account_charge")
 public class SavingsAccountCharge extends AbstractPersistable<Long> {
-
+	
     @ManyToOne(optional = false)
     @JoinColumn(name = "savings_account_id", referencedColumnName = "id", nullable = false)
     private SavingsAccount savingsAccount;
@@ -75,7 +73,7 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
     private Charge charge;
     
     @OrderBy(value = "installmentNumber, dueDate")
-    @OneToMany(mappedBy = "savingsAccountCharge", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "savingsAccountCharge", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<SavingsAccountChargeScheduleInstallment> savingsAccountChargeScheduleInstallments;
     
     @Column(name = "charge_time_enum", nullable = false)
@@ -992,8 +990,8 @@ public class SavingsAccountCharge extends AbstractPersistable<Long> {
 			SavingsAccountChargeScheduleInstallment installment = iter
 					.previous();
 			if (installment.getDueDate().isEqual(getDueLocalDate())) {
+				iter.next();
 				if (iter.hasNext()) {
-					iter.next();
 					installment = iter.next();
 					this.dueDate = installment.getDueDate().toDate();
 					this.amountOutstanding = this.amountOutstanding.add(amount);
